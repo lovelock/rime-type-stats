@@ -19,7 +19,7 @@
 4. **可用字段**：`text/characters`（汉字数）、`text/code_keystrokes`（编码击键）、`text/code_characters`、`commit_length/{1,2,3,4,5_plus}`、`speed_average/{characters,milliseconds,sessions}`、`speed_peak_window_10s/NNNN`。
 5. **文件格式为标准 LevelDB**：`.ldb` footer magic `0xdb4775248b80fb57`；WAL `.log` 为标准 record framing（7 字节头：CRC32C + len16 + type8）。**所有 block 的压缩类型为 `none`**，无需 snappy。
 6. **`LOCK` 是真锁**：Squirrel 进程持有 `fcntl` 排他锁（实测 `EAGAIN`）。这**只**影响通过 LevelDB 库 open 目录的方式。
-7. **多设备**：key 尾部带 `device_id`，同一 field 多设备需按天求和。
+7. **单设备**：key 尾部带 `device_id`，但用户只有这一台机器、也不接网络。`device_id` 仅作为 key 的一部分被解析后丢弃，不做设备区分、不做跨设备合并。
 8. **工具链**：cargo 1.98.1；crates 走 ustc 镜像，`tray-icon 0.19.3` / `tao 0.30.8` / `tiny_http 0.12.0` 均可拉取。
 
 ## 3. 存储位置与数据格式
@@ -106,8 +106,8 @@ type: 1=FULL, 2=FIRST, 3=MIDDLE, 4=LAST
 所有文件解析出的记录带 `(user_key, seq, value)`。合并策略：
 
 - 以 `user_key` 分组，取 `seq` 最大者（`.log` 的 seq 天然大于所有 `.ldb`，因此无需额外版本判断）。
-- key 解析正则：`^statistics/day/(\d{8})/(.+?) \t([0-9a-f]{8})$`。
-- 同一天同一 field 跨设备求和。
+- key 解析：`^statistics/day/(\d{8})/(.+?) \t([0-9a-f]{8})$`。尾部的 `device_id` 捕获后**丢弃**，不作为分组维度。
+- 同一天同一 field 直接取最新值（单设备下不存在多源求和）。
 - 只关心 `text/characters`、`text/code_keystrokes`、`commit_length/*`、`speed_average/*`，其余字段忽略。
 
 ## 6. 同步与一致性
@@ -190,7 +190,7 @@ type: 1=FULL, 2=FIRST, 3=MIDDLE, 4=LAST
 |---|---|
 | SSTable 解析 | 用真实 `.ldb` 截取的字节片段作 fixture（不含个人信息，仅 statistics key），断言条目数与若干已知 key/value |
 | WAL 解析 | 手工构造 FULL / 跨块 FIRST+LAST / 尾部残缺 三种字节序列 |
-| 合并取值 | 构造多文件多 seq 冲突，断言取最大 seq；构造多设备同日，断言求和 |
+| 合并取值 | 构造多文件多 seq 冲突，断言取最大 seq；构造同 day 重复 key，断言取最新 |
 | JSONL 折叠 | 同一 day 多条递增记录 → 取 max；乱序输入 → 结果相同；空文件 → 空表 |
 | 聚合 | 日→周、日→月折叠的边界（跨年周、月末 31 号、闰年 2 月） |
 | 端到端 | 用 fixture 目录跑一次完整 sync，断言 `/api/days` JSON 结构与非空 |
@@ -202,7 +202,7 @@ type: 1=FULL, 2=FIRST, 3=MIDDLE, 4=LAST
 |---|---|
 | 万象 lua 未来改 key 格式 | 解析器对未知 field 静默忽略；仅 `text/characters` 缺失时告警并在 UI 显示"数据源无更新" |
 | LevelDB 压缩策略被改为 snappy | 解析时检查 block type；非 0 则记录错误并在 UI 提示（不静默出错） |
-| 用户换机器/多设备 | 按 device_id 求和；UI 不区分设备（视作个人总输入量） |
+| 用户换机器 | 按 `device_id` 分组的逻辑不存在；换机后新 `device_id` 的数据自然累加到同一批 day 上，无需特殊处理 |
 | 端口冲突 | 自动寻址 8787..8797 |
 | 二进制长期运行内存 | 数据量级 < 1 MB，无累积增长；每次同步重建记录集 |
 
