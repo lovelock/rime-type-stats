@@ -1,6 +1,6 @@
 //! 菜单栏入口与事件循环。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tao::event::Event;
@@ -27,7 +27,7 @@ fn open_in_browser(port: u16) {
     let _ = std::process::Command::new("open").arg(url).spawn();
 }
 
-fn open_data_dir(dir: &PathBuf) {
+fn open_data_dir(dir: &Path) {
     let _ = std::process::Command::new("open").arg(dir).spawn();
 }
 
@@ -49,7 +49,7 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
 
     let proxy = event_loop.create_proxy();
 
-    // 后台同步线程：立即同步一次，之后按间隔循环
+    // 后台同步线程：启动时已经同步过一次，这里先等一个周期再开始
     {
         let state = state.clone();
         let proxy = proxy.clone();
@@ -60,10 +60,10 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                 return;
             };
             loop {
+                std::thread::sleep(SYNC_INTERVAL);
                 let outcome = sync_once(&rime_dir, &store);
                 state.replace(outcome);
                 let _ = proxy.send_event(UserEvent::Synced);
-                std::thread::sleep(SYNC_INTERVAL);
             }
         });
     }

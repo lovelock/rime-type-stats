@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 停止并移除 rime-counter 的 LaunchAgent 与二进制，保留统计数据。
 set -euo pipefail
 
 APP_NAME="rime-counter"
