@@ -209,8 +209,15 @@ pub fn read_dir(dir: &Path) -> Result<BTreeMap<String, DayStats>, ReadError> {
         }
     }
     // 文件名即文件编号，按编号升序保证 seq 递增语义
-    ldb_paths.sort();
-    log_paths.sort();
+    // 文件编号决定数据新旧：按数值排序（编号超过 6 位时字典序会失效）
+    let by_number = |p: &std::path::PathBuf| {
+        p.file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    ldb_paths.sort_by_key(by_number);
+    log_paths.sort_by_key(by_number);
 
     for path in &ldb_paths {
         let bytes = match std::fs::read(path) {
