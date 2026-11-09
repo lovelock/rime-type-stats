@@ -51,6 +51,15 @@ impl SyncState {
         )
     }
 
+    /// 读取某一天的字数，不克隆整张日表。
+    ///
+    /// 菜单栏每轮事件循环都要取这个值，用 [`Self::snapshot`] 会整表克隆，
+    /// 在没有数据变化时纯属浪费。
+    pub fn characters_on(&self, iso_day: &str) -> u64 {
+        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        guard.days.get(iso_day).map(|d| d.characters).unwrap_or(0)
+    }
+
     /// 用新结果替换快照。失败（`error` 非空）时保留原有日表，只更新错误信息。
     pub fn replace(&self, outcome: SyncOutcome) {
         let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -184,6 +193,21 @@ mod tests {
         assert!(outcome.days.is_empty());
         assert_eq!(outcome.changed, 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn characters_on_reads_single_day() {
+        let mut initial = BTreeMap::new();
+        initial.insert(
+            "2026-11-09".to_string(),
+            DayStats {
+                characters: 560,
+                ..Default::default()
+            },
+        );
+        let state = SyncState::new(initial);
+        assert_eq!(state.characters_on("2026-11-09"), 560);
+        assert_eq!(state.characters_on("1999-01-01"), 0, "缺失的日期返回 0");
     }
 
     #[test]

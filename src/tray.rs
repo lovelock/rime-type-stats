@@ -1,9 +1,9 @@
 //! 菜单栏入口与事件循环。
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use tao::event::{Event, StartCause};
+use tao::event::Event;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
@@ -38,9 +38,8 @@ fn build_icon() -> Icon {
 
 /// 菜单栏标题所用的今日字数。
 fn today_chars(state: &SyncState) -> u64 {
-    let (days, _, _) = state.snapshot();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    days.get(&today).map(|d| d.characters).unwrap_or(0)
+    state.characters_on(&today)
 }
 
 /// 运行菜单栏应用，永不返回。
@@ -74,23 +73,17 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
     let mut menu_sync: Option<MenuItem> = None;
     let mut menu_data_dir: Option<MenuItem> = None;
     let mut menu_quit: Option<MenuItem> = None;
-    let mut next_sync = Instant::now() + SYNC_INTERVAL;
+    // 已写入菜单栏的标题。AppKit 的 setTitle 即使内容不变也会标记状态栏项为脏，
+    // 触发重绘 → 产生事件 → 再次 setTitle，形成自持重绘循环（实测吃掉 97% CPU）。
+    // 因此标题只在同步完成且文本确实变化时才更新。
+    let mut shown_title: Option<String> = None;
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::WaitUntil(next_sync);
+        // 完全阻塞等待：周期同步由后台线程自己 sleep 驱动，事件循环不需要定时器
+        *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::NewEvents(cause) => {
-                // StartCause 为 non_exhaustive，用 matches! 判断初始化与定时到达
-                let timer_fired = matches!(
-                    cause,
-                    StartCause::Init | StartCause::ResumeTimeReached { .. }
-                );
-                if timer_fired && Instant::now() >= next_sync {
-                    next_sync = Instant::now() + SYNC_INTERVAL;
-                    // 同步线程独立运行，这里只负责重排定时器并驱动标题刷新
-                }
-
+            Event::NewEvents(_) => {
                 // macOS 要求事件循环已开始运行后才能创建 TrayIcon
                 if tray.is_none() {
                     let menu = Menu::new();
@@ -103,17 +96,19 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                     let _ = menu.append(&data);
                     let _ = menu.append(&quit);
 
+                    let initial_title = menu_bar_title(today_chars(&state));
                     let icon = TrayIconBuilder::new()
                         .with_menu(Box::new(menu))
                         .with_menu_on_left_click(false)
                         .with_icon_as_template(true)
                         .with_icon(build_icon())
                         .with_tooltip("Rime 打字统计")
-                        .with_title(menu_bar_title(today_chars(&state)))
+                        .with_title(&initial_title)
                         .build();
 
                     if let Ok(icon) = icon {
                         tray = Some(icon);
+                        shown_title = Some(initial_title);
                         menu_open = Some(open);
                         menu_sync = Some(sync_now);
                         menu_data_dir = Some(data);
@@ -122,11 +117,6 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                 }
             }
             Event::MainEventsCleared => {
-                // 刷新标题
-                if let Some(icon) = tray.as_ref() {
-                    icon.set_title(Some(menu_bar_title(today_chars(&state))));
-                }
-
                 // 托盘左键：打开网页
                 while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
                     if let TrayIconEvent::Click {
@@ -160,7 +150,17 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                 }
             }
             Event::UserEvent(UserEvent::Synced) => {
-                // 标题在 MainEventsCleared 中统一刷新
+                // 同步完成后才刷新标题。这是标题唯一的更新时机：
+                // AppKit 的 setTitle 即使文本不变也会把状态栏项标记为脏并触发整条
+                // 重绘链路，若放在 MainEventsCleared 里无条件调用，会形成
+                // 重绘 → 事件 → 再重绘 的自持循环（实测占满 97% 单核）。
+                if let Some(icon) = tray.as_ref() {
+                    let title = menu_bar_title(today_chars(&state));
+                    if shown_title.as_deref() != Some(title.as_str()) {
+                        icon.set_title(Some(title.clone()));
+                        shown_title = Some(title);
+                    }
+                }
             }
             Event::LoopDestroyed => {
                 *control_flow = ControlFlow::Exit;
