@@ -48,7 +48,7 @@ cargo run                      # 完整模式（菜单栏 + 网页）
 
 环境变量可覆盖默认路径：
 
-- `RIME_COUNTER_RIME_DIR` — Rime 用户目录，默认 `~/Library/Rime`
+- `RIME_COUNTER_RIME_DIR` — Rime 统计库目录，默认 `~/Library/Rime/stats.userdb`（注意是子目录，`read_dir` 只扫描一层）
 - `RIME_COUNTER_DATA_DIR` — 数据目录，默认 `~/Library/Application Support/rime-counter`
 
 ## 仪表盘
