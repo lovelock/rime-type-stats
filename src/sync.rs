@@ -122,21 +122,29 @@ pub fn sync_once(rime_dir: &Path, store: &Store) -> SyncOutcome {
         }
     };
 
+    // 当天单独处理：万象的计数会回落，必须以源数据为准，否则菜单栏卡在历史峰值
+    let today = to_iso_day(&chrono::Local::now().format("%Y%m%d").to_string());
+
     for (compact_day, stats) in &scanned {
         let Some(iso_day) = to_iso_day(compact_day) else {
             continue;
         };
+        let is_today = today.as_deref() == Some(iso_day.as_str());
         // 已收敛的日期直接跳过，不必再进 append
         if let Some(existing) = current.get(&iso_day) {
-            let unchanged = existing.characters >= stats.characters
-                && existing.keystrokes >= stats.keystrokes
-                && existing.commits >= stats.commits
-                && existing.speed_cpm >= stats.speed_cpm;
+            let unchanged = if is_today {
+                *existing == *stats
+            } else {
+                existing.characters >= stats.characters
+                    && existing.keystrokes >= stats.keystrokes
+                    && existing.commits >= stats.commits
+                    && existing.speed_cpm >= stats.speed_cpm
+            };
             if unchanged {
                 continue;
             }
         }
-        match store.append(&iso_day, stats) {
+        match store.append(&iso_day, stats, is_today) {
             Ok(true) => changed += 1,
             Ok(false) => {}
             Err(e) => write_error = Some(format!("写入存储失败：{e}")),
