@@ -98,10 +98,35 @@ pub fn sync_once(rime_dir: &Path, store: &Store) -> SyncOutcome {
 
     let mut changed = 0usize;
     let mut write_error: Option<String> = None;
+
+    // 先一次性读出当前折叠值，避免 append 内部对每一天都重新全量 load 文件
+    // （否则 41 天就是 41 次全文件读取，随历史增长退化为 O(n²)）。
+    let current = match store.load() {
+        Ok(days) => days,
+        Err(e) => {
+            return SyncOutcome {
+                days: BTreeMap::new(),
+                changed,
+                error: Some(format!("读取存储失败：{e}")),
+                last_sync_unix: now_unix(),
+            };
+        }
+    };
+
     for (compact_day, stats) in &scanned {
         let Some(iso_day) = to_iso_day(compact_day) else {
             continue;
         };
+        // 已收敛的日期直接跳过，不必再进 append
+        if let Some(existing) = current.get(&iso_day) {
+            let unchanged = existing.characters >= stats.characters
+                && existing.keystrokes >= stats.keystrokes
+                && existing.commits >= stats.commits
+                && existing.speed_cpm >= stats.speed_cpm;
+            if unchanged {
+                continue;
+            }
+        }
         match store.append(&iso_day, stats) {
             Ok(true) => changed += 1,
             Ok(false) => {}
