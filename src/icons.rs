@@ -4,10 +4,23 @@
 const SIZE: u32 = 32;
 
 /// 32×32 RGBA 像素，编译期生成：圆角方块轮廓 + 三条横线，形似键盘。
-pub const ICON_RGBA: (u32, u32, &[u8]) = (SIZE, SIZE, &build_icon());
+/// macOS 用白色模板图标，其他平台用主色蓝以适配浅色面板。
+pub const ICON_RGBA: (u32, u32, &[u8]) = (SIZE, SIZE, &build_icon(icon_rgb()));
 
-/// 生成模板图标像素：白色不透明为可见区域，alpha=0 为透明。
-const fn build_icon() -> [u8; (SIZE * SIZE * 4) as usize] {
+/// 图标颜色：macOS 模板图标为纯白，其他平台用仪表盘主色 `#3987e5`。
+const fn icon_rgb() -> [u8; 3] {
+    #[cfg(target_os = "macos")]
+    {
+        [255, 255, 255]
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        [0x39, 0x87, 0xe5]
+    }
+}
+
+/// 生成图标像素：`rgb` 为不透明区域颜色，alpha=0 为透明。
+const fn build_icon(rgb: [u8; 3]) -> [u8; (SIZE * SIZE * 4) as usize] {
     let mut buf = [0u8; (SIZE * SIZE * 4) as usize];
     let mut y = 0u32;
     while y < SIZE {
@@ -15,10 +28,9 @@ const fn build_icon() -> [u8; (SIZE * SIZE * 4) as usize] {
         while x < SIZE {
             let visible = is_keyboard_pixel(x, y);
             let idx = ((y * SIZE + x) * 4) as usize;
-            // 模板图标：可见部分为纯白，透明部分 alpha=0
-            buf[idx] = 255;
-            buf[idx + 1] = 255;
-            buf[idx + 2] = 255;
+            buf[idx] = rgb[0];
+            buf[idx + 1] = rgb[1];
+            buf[idx + 2] = rgb[2];
             buf[idx + 3] = if visible { 255 } else { 0 };
             x += 1;
         }
@@ -63,6 +75,11 @@ pub fn menu_bar_title(today_chars: u64) -> String {
     format!("⌨ {}", format_thousands(today_chars))
 }
 
+/// Linux 菜单首项：今日汉字数（AppIndicator 不支持 macOS 式标题）。
+pub fn today_menu_text(today_chars: u64) -> String {
+    format!("今日 {} 字", format_thousands(today_chars))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +98,28 @@ mod tests {
     fn builds_menu_bar_title() {
         assert_eq!(menu_bar_title(0), "⌨ 0");
         assert_eq!(menu_bar_title(1234), "⌨ 1,234");
+    }
+
+    #[test]
+    fn formats_today_menu_text() {
+        assert_eq!(today_menu_text(0), "今日 0 字");
+        assert_eq!(today_menu_text(1234), "今日 1,234 字");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_icon_uses_accent_color() {
+        let (_, _, rgba) = ICON_RGBA;
+        let px = rgba.chunks_exact(4).find(|p| p[3] > 200).unwrap();
+        assert_eq!(&px[..3], &[0x39, 0x87, 0xe5]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_icon_is_white_template() {
+        let (_, _, rgba) = ICON_RGBA;
+        let px = rgba.chunks_exact(4).find(|p| p[3] > 200).unwrap();
+        assert_eq!(&px[..3], &[255, 255, 255]);
     }
 
     #[test]
