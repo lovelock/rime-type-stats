@@ -1,31 +1,13 @@
 //! rime-type-stats：统计 Rime 每日打字字数，提供菜单栏入口与本地仪表盘。
 
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use rime_type_stats::paths::{data_dir, rime_dir};
 use rime_type_stats::server::{bind_first_available, serve};
 use rime_type_stats::store::Store;
 use rime_type_stats::sync::{sync_once, to_iso_day, SyncState};
 use rime_type_stats::tray;
-
-fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn rime_dir() -> PathBuf {
-    std::env::var_os("RIME_TYPE_STATS_RIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home_dir().join("Library/Rime/stats.userdb"))
-}
-
-fn data_dir() -> PathBuf {
-    std::env::var_os("RIME_TYPE_STATS_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home_dir().join("Library/Application Support/rime-type-stats"))
-}
 
 fn print_days(days: &std::collections::BTreeMap<String, rime_type_stats::rime::parser::DayStats>) {
     println!("共 {} 天有记录", days.len());
