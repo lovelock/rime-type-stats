@@ -271,6 +271,11 @@ pub fn read_dir(dir: &Path) -> Result<BTreeMap<String, DayStats>, ReadError> {
 }
 
 /// 把内部 key 拆成 `(user_key, seq)`；不足 8 字节时视为 seq=0。
+///
+/// LevelDB 内部 key 的尾部 8 字节布局是 `type(1) + seq(7, LE)`——type 在**前**，
+/// seq 在**后**。早期实现取前 7 字节当作 seq，把 type 字节吸收进了 seq 高位，
+/// 得到 85508097 这类错误值；由于该值远大于 WAL 中的正常 seq，
+/// 聚合时 SSTable 里的旧记录会错误地「胜过」WAL 中的新记录。
 fn split_internal_key(internal: &[u8]) -> (Vec<u8>, u64) {
     if internal.len() < KEY_TRAILER {
         return (internal.to_vec(), 0);
@@ -279,7 +284,7 @@ fn split_internal_key(internal: &[u8]) -> (Vec<u8>, u64) {
     let user = internal[..split].to_vec();
     let tail = &internal[split..];
     let mut seq_bytes = [0u8; 8];
-    seq_bytes[..7].copy_from_slice(&tail[..7]);
+    seq_bytes[..7].copy_from_slice(&tail[1..8]);
     (user, u64::from_le_bytes(seq_bytes))
 }
 
@@ -294,15 +299,34 @@ mod tests {
         k
     }
 
+    /// 按 LevelDB 真实布局构造内部 key：尾部是 `type(1) + seq(7, LE)`。
     fn internal_key(user: &[u8], seq: u64) -> Vec<u8> {
         let mut k = user.to_vec();
+        k.push(1); // type = value
         k.extend_from_slice(&seq.to_le_bytes()[..7]);
-        k.push(1);
         k
     }
 
     fn value(c: u64) -> Vec<u8> {
         format!("c={c} d=0 t=0").into_bytes()
+    }
+
+    /// 回归：seq 占尾部 8 字节中的低 7 字节（LE），最高字节是 type。
+    /// 早期实现把 type 字节当成了 seq 高位，导致大 seq 时解析出错，
+    /// 进而让 SSTable 中的旧值「胜过」WAL 中的新值。
+    #[test]
+    fn splits_internal_key_with_large_seq() {
+        let uk = user_key("20261110", "text/characters");
+        let k = internal_key(&uk, 334_016);
+        let (user, seq) = split_internal_key(&k);
+        assert_eq!(user, uk);
+        assert_eq!(seq, 334_016, "大 seq 必须精确还原，不能混入 type 字节");
+
+        // 极值：接近 2^56
+        let big = (1u64 << 56) - 1;
+        let k = internal_key(&uk, big);
+        let (_, seq) = split_internal_key(&k);
+        assert_eq!(seq, big);
     }
 
     #[test]
