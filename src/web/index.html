@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rime 打字统计</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --grid: #2f2f2d;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8a8a82;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --surface-2: #f2f2f0;
+    --grid: #ddddda;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7a74;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font: 14px/1.5 -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 24px 64px; }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 24px;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+  .meta { color: var(--text-muted); font-size: 12px; }
+  .meta .err { color: var(--series-2); }
+  .toolbar { display: flex; gap: 8px; align-items: center; }
+  button {
+    background: var(--surface-2); color: var(--text-secondary);
+    border: 1px solid var(--grid); border-radius: 6px;
+    padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button:hover { color: var(--text-primary); }
+  button[aria-pressed="true"] {
+    background: var(--series-1); border-color: var(--series-1); color: #fff;
+  }
+  .kpis {
+    display: grid; gap: 1px; background: var(--grid);
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    border: 1px solid var(--grid); border-radius: 10px; overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .kpi { background: var(--surface-1); padding: 16px 18px; }
+  .kpi .label { color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
+  .kpi .value {
+    font-size: 26px; font-weight: 600; letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .delta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .kpi .delta.up { color: var(--series-3); }
+  .kpi .delta.down { color: var(--series-2); }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--grid);
+    border-radius: 10px; padding: 18px 18px 12px; margin-bottom: 24px;
+  }
+  .card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .segments { display: flex; gap: 6px; flex-wrap: wrap; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .crosshair { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 10; opacity: 0;
+    background: var(--surface-2); border: 1px solid var(--grid);
+    border-radius: 8px; padding: 9px 12px; font-size: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35); transition: opacity .1s;
+  }
+  .tooltip .t-day { font-weight: 600; margin-bottom: 4px; }
+  .tooltip .t-row { color: var(--text-secondary); display: flex; justify-content: space-between; gap: 18px; }
+  .tooltip .t-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+  td { font-variant-numeric: tabular-nums; }
+  .empty { color: var(--text-muted); padding: 28px 0; text-align: center; }
+  .hint { color: var(--text-muted); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Rime 打字统计</h1>
+      <div class="meta" id="meta">加载中…</div>
+    </div>
+    <div class="toolbar">
+      <button id="theme" type="button">切换到浅色</button>
+      <button id="table-toggle" type="button" aria-pressed="false">表格视图</button>
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="关键指标"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="card-title" id="chart-title">字数趋势</div>
+      <div class="segments" id="granularity" role="group" aria-label="聚合粒度">
+        <button type="button" data-g="day" aria-pressed="true">日</button>
+        <button type="button" data-g="week" aria-pressed="false">周</button>
+        <button type="button" data-g="month" aria-pressed="false">月</button>
+      </div>
+      <div class="segments" id="range" role="group" aria-label="时间范围">
+        <button type="button" data-r="30" aria-pressed="true">近 30 天</button>
+        <button type="button" data-r="90" aria-pressed="false">近 90 天</button>
+        <button type="button" data-r="365" aria-pressed="false">近一年</button>
+        <button type="button" data-r="all" aria-pressed="false">全部</button>
+      </div>
+    </div>
+    <svg id="chart" viewBox="0 0 900 340" role="img" aria-label="字数随时间变化趋势"></svg>
+    <div class="hint" id="chart-hint"></div>
+  </section>
+
+  <section class="card" id="table-card" hidden>
+    <div class="card-head"><div class="card-title">数据表</div></div>
+    <table id="table"><thead></thead><tbody></tbody></table>
+  </section>
+</main>
+<div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const state = { days: [], granularity: "day", range: "30", error: null, lastSync: 0 };
+
+  const el = (id) => document.getElementById(id);
+  const fmt = (n) => Number(n || 0).toLocaleString("zh-CN");
+  const pad = (n) => String(n).padStart(2, "0");
+  const toISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseISO = (s) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+
+  // ---------- 数据访问 ----------
+  async function load() {
+    try {
+      const res = await fetch("/api/days", { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      state.days = data.days || [];
+      state.error = data.sync ? data.sync.error : null;
+      state.lastSync = data.sync ? data.sync.last_sync_unix : 0;
+    } catch (e) {
+      state.error = "无法连接本地服务：" + e.message;
+    }
+    renderMeta();
+    renderKpis();
+    renderChart();
+    renderTable();
+  }
+
+  function renderMeta() {
+    const parts = [];
+    if (state.lastSync) {
+      parts.push("最后同步 " + new Date(state.lastSync * 1000).toLocaleTimeString("zh-CN"));
+    }
+    if (state.error) {
+      parts.push('<span class="err">' + escapeHtml(state.error) + "</span>");
+    }
+    el("meta").innerHTML = parts.join(" · ") || "尚无数据";
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[c]);
+  }
+
+  // ---------- 聚合 ----------
+  function sumRange(startISO, endISO) {
+    let chars = 0, keys = 0;
+    for (const d of state.days) {
+      if (d.day >= startISO && d.day <= endISO) {
+        chars += d.characters || 0;
+        keys += d.keystrokes || 0;
+      }
+    }
+    return { chars, keys };
+  }
+
+  function isoWeekStart(date) {
+    const d = new Date(date);
+    const dow = (d.getDay() + 6) % 7; // 周一为 0
+    d.setDate(d.getDate() - dow);
+    return d;
+  }
+
+  function aggregate(granularity) {
+    const buckets = new Map();
+    for (const d of state.days) {
+      const date = parseISO(d.day);
+      let key;
+      if (granularity === "week") {
+        key = toISO(isoWeekStart(date));
+      } else if (granularity === "month") {
+        key = d.day.slice(0, 7);
+      } else {
+        key = d.day;
+      }
+      const cur = buckets.get(key) || { key, characters: 0, keystrokes: 0, commits: 0, speedSum: 0, speedN: 0 };
+      cur.characters += d.characters || 0;
+      cur.keystrokes += d.keystrokes || 0;
+      cur.commits += d.commits || 0;
+      if (d.speed_cpm) { cur.speedSum += d.speed_cpm; cur.speedN += 1; }
+      buckets.set(key, cur);
+    }
+    let list = Array.from(buckets.values()).sort((a, b) => (a.key < b.key ? -1 : 1));
+    list.forEach((b) => { b.speed = b.speedN ? Math.round(b.speedSum / b.speedN) : 0; });
+
+    if (state.range !== "all") {
+      const n = Number(state.range);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - n);
+      const cutoffISO = toISO(cutoff);
+      list = list.filter((b) => (b.key.length === 10 ? b.key : b.key + "-01") >= cutoffISO);
+    }
+    return list;
+  }
+
+  // ---------- KPI ----------
+  function renderKpis() {
+    const today = new Date();
+    const todayISO = toISO(today);
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    const yISO = toISO(yesterday);
+
+    const weekStart = isoWeekStart(today);
+    const weekS = sumRange(toISO(weekStart), todayISO).chars;
+    const monthS = sumRange(todayISO.slice(0, 7) + "-01", todayISO).chars;
+    const total = state.days.reduce((a, d) => a + (d.characters || 0), 0);
+    const todayRec = state.days.find((d) => d.day === todayISO);
+    const yRec = state.days.find((d) => d.day === yISO);
+    const todayChars = todayRec ? todayRec.characters : 0;
+    const yChars = yRec ? yRec.characters : 0;
+
+    let deltaHTML = "";
+    if (yChars > 0) {
+      const pct = Math.round(((todayChars - yChars) / yChars) * 100);
+      const cls = pct >= 0 ? "up" : "down";
+      deltaHTML = `<div class="delta ${cls}">较昨日 ${pct >= 0 ? "+" : ""}${pct}%</div>`;
+    } else {
+      deltaHTML = `<div class="delta">昨日 ${fmt(yChars)}</div>`;
+    }
+
+    const speeds = state.days.filter((d) => d.speed_cpm > 0).map((d) => d.speed_cpm);
+    const avgSpeed = speeds.length
+      ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)
+      : 0;
+
+    const items = [
+      { label: "今日", value: fmt(todayChars), extra: deltaHTML },
+      { label: "本周", value: fmt(weekS), extra: "" },
+      { label: "本月", value: fmt(monthS), extra: "" },
+      { label: "累计", value: fmt(total), extra: `<div class="delta">${state.days.length} 天有记录</div>` },
+      { label: "平均速度", value: fmt(avgSpeed), extra: '<div class="delta">字 / 分钟</div>' },
+    ];
+
+    el("kpis").innerHTML = items.map((i) => `
+      <div class="kpi">
+        <div class="label">${i.label}</div>
+        <div class="value">${i.value}</div>
+        ${i.extra}
+      </div>`).join("");
+  }
+
+  // ---------- 图表 ----------
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const W = 900, H = 340, M = { top: 16, right: 16, bottom: 34, left: 62 };
+  const plotW = W - M.left - M.right;
+  const plotH = H - M.top - M.bottom;
+
+  function svgEl(tag, attrs) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    return node;
+  }
+
+  function niceMax(v) {
+    if (v <= 0) return 10;
+    const mag = Math.pow(10, Math.floor(Math.log10(v)));
+    const norm = v / mag;
+    const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+    return step * mag;
+  }
+
+  function renderChart() {
+    const svg = el("chart");
+    svg.innerHTML = "";
+    const data = aggregate(state.granularity);
+    const gLabel = { day: "每日", week: "每周", month: "每月" }[state.granularity];
+    el("chart-title").textContent = `${gLabel}字数`;
+
+    if (!data.length) {
+      svg.appendChild(svgEl("text", {
+        x: W / 2, y: H / 2, "text-anchor": "middle", class: "axis-label",
+      })).textContent = "暂无数据";
+      el("chart-hint").textContent = "";
+      return;
+    }
+
+    const max = niceMax(Math.max(...data.map((d) => d.characters)));
+    const xOf = (i) => M.left + (data.length === 1 ? plotW / 2 : (i / (data.length - 1)) * plotW);
+    const yOf = (v) => M.top + plotH - (v / max) * plotH;
+
+    // 网格线与 Y 轴刻度
+    const ticks = 4;
+    for (let t = 0; t <= ticks; t++) {
+      const v = (max / ticks) * t;
+      const y = yOf(v);
+      svg.appendChild(svgEl("line", {
+        x1: M.left, x2: W - M.right, y1: y, y2: y, class: "gridline",
+      }));
+      const label = svgEl("text", {
+        x: M.left - 10, y: y + 4, "text-anchor": "end", class: "axis-label",
+      });
+      label.textContent = fmt(Math.round(v));
+      svg.appendChild(label);
+    }
+
+    // X 轴标签（首、中、尾，避免拥挤）
+    const xIndexes = data.length <= 3
+      ? data.map((_, i) => i)
+      : [0, Math.floor((data.length - 1) / 2), data.length - 1];
+    for (const i of new Set(xIndexes)) {
+      const label = svgEl("text", {
+        x: xOf(i), y: H - 10, "text-anchor": "middle", class: "axis-label",
+      });
+      label.textContent = data[i].key;
+      svg.appendChild(label);
+    }
+
+    const isBar = state.granularity !== "day";
+
+    if (isBar) {
+      const slot = plotW / data.length;
+      const barW = Math.min(24, slot * 0.6);
+      data.forEach((d, i) => {
+        const x = M.left + slot * i + (slot - barW) / 2;
+        const y = yOf(d.characters);
+        const h = M.top + plotH - y;
+        if (h <= 0) return;
+        svg.appendChild(svgEl("path", {
+          d: roundedTopRect(x, y, barW, h, 4),
+          fill: "var(--series-1)",
+        }));
+      });
+    } else {
+      // 面积渐变
+      const grad = svgEl("linearGradient", { id: "area", x1: "0", y1: "0", x2: "0", y2: "1" });
+      grad.appendChild(svgEl("stop", { offset: "0", "stop-color": "var(--series-1)", "stop-opacity": "0.18" }));
+      grad.appendChild(svgEl("stop", { offset: "1", "stop-color": "var(--series-1)", "stop-opacity": "0" }));
+      const defs = svgEl("defs", {});
+      defs.appendChild(grad);
+      svg.appendChild(defs);
+
+      let linePath = "";
+      let areaPath = "";
+      data.forEach((d, i) => {
+        const x = xOf(i), y = yOf(d.characters);
+        linePath += (i === 0 ? "M" : "L") + x + "," + y;
+        if (i === 0) areaPath = `M${x},${M.top + plotH} L${x},${y}`;
+        else areaPath += `L${x},${y}`;
+      });
+      areaPath += `L${xOf(data.length - 1)},${M.top + plotH} Z`;
+
+      svg.appendChild(svgEl("path", { d: areaPath, fill: "url(#area)" }));
+      svg.appendChild(svgEl("path", {
+        d: linePath, fill: "none", stroke: "var(--series-1)",
+        "stroke-width": "2", "stroke-linejoin": "round", "stroke-linecap": "round",
+      }));
+
+      // 末端圆点：半径 4 + 2px 表面色描边
+      const last = data.length - 1;
+      svg.appendChild(svgEl("circle", {
+        cx: xOf(last), cy: yOf(data[last].characters), r: 4,
+        fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": "2",
+      }));
+    }
+
+    // 交互层
+    const crosshair = svgEl("line", {
+      y1: M.top, y2: M.top + plotH, class: "crosshair", opacity: "0",
+    });
+    svg.appendChild(crosshair);
+
+    const hit = svgEl("rect", {
+      x: M.left, y: M.top, width: plotW, height: plotH, fill: "transparent",
+    });
+    svg.appendChild(hit);
+
+    const tip = el("tooltip");
+    hit.addEventListener("mousemove", (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const relX = ((ev.clientX - rect.left) / rect.width) * W;
+      let idx;
+      if (isBar) {
+        idx = Math.floor(((relX - M.left) / plotW) * data.length);
+      } else {
+        idx = Math.round(((relX - M.left) / plotW) * (data.length - 1));
+      }
+      idx = Math.max(0, Math.min(data.length - 1, idx));
+      const d = data[idx];
+      const cx = isBar
+        ? M.left + (plotW / data.length) * (idx + 0.5)
+        : xOf(idx);
+
+      crosshair.setAttribute("x1", cx);
+      crosshair.setAttribute("x2", cx);
+      crosshair.setAttribute("opacity", "1");
+
+      tip.innerHTML = `
+        <div class="t-day">${escapeHtml(d.key)}</div>
+        <div class="t-row"><span>字数</span><b>${fmt(d.characters)}</b></div>
+        <div class="t-row"><span>击键</span><b>${fmt(d.keystrokes)}</b></div>
+        <div class="t-row"><span>上屏次数</span><b>${fmt(d.commits)}</b></div>
+        <div class="t-row"><span>速度</span><b>${fmt(d.speed)} 字/分</b></div>`;
+      tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - 190) + "px";
+      tip.style.top = Math.max(ev.clientY - 70, 8) + "px";
+      tip.style.opacity = "1";
+    });
+    hit.addEventListener("mouseleave", () => {
+      crosshair.setAttribute("opacity", "0");
+      tip.style.opacity = "0";
+    });
+
+    el("chart-hint").textContent =
+      `共 ${data.length} 个${gLabel.slice(1)}区间；击键与速度见浮层与表格。`;
+  }
+
+  function roundedTopRect(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h);
+    return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y}` +
+      ` L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr}` +
+      ` L${x + w},${y + h} Z`;
+  }
+
+  // ---------- 表格 ----------
+  function renderTable() {
+    const data = aggregate(state.granularity);
+    const table = el("table");
+    table.querySelector("thead").innerHTML =
+      `<tr><th>日期</th><th>字数</th><th>击键</th><th>上屏次数</th><th>速度（字/分）</th></tr>`;
+    table.querySelector("tbody").innerHTML = data.length
+      ? data.slice().reverse().map((d) => `
+          <tr><td>${escapeHtml(d.key)}</td><td>${fmt(d.characters)}</td>
+          <td>${fmt(d.keystrokes)}</td><td>${fmt(d.commits)}</td><td>${fmt(d.speed)}</td></tr>`).join("")
+      : '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+  }
+
+  // ---------- 控件 ----------
+  function bindSegments(id, attr, onPick) {
+    const box = el(id);
+    box.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      box.querySelectorAll("button").forEach((b) =>
+        b.setAttribute("aria-pressed", String(b === btn)));
+      onPick(btn.dataset[attr]);
+    });
+  }
+
+  bindSegments("granularity", "g", (v) => {
+    state.granularity = v;
+    renderChart();
+    renderTable();
+  });
+  bindSegments("range", "r", (v) => {
+    state.range = v;
+    renderChart();
+    renderTable();
+  });
+
+  el("table-toggle").addEventListener("click", (ev) => {
+    const btn = ev.currentTarget;
+    const showing = btn.getAttribute("aria-pressed") === "true";
+    btn.setAttribute("aria-pressed", String(!showing));
+    el("table-card").hidden = showing;
+  });
+
+  el("theme").addEventListener("click", (ev) => {
+    const root = document.documentElement;
+    const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    ev.currentTarget.textContent = next === "light" ? "切换到深色" : "切换到浅色";
+    renderChart();
+  });
+
+  // 每分钟自动刷新一次（与后端同步周期一致）
+  load();
+  setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>
