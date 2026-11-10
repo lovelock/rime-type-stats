@@ -218,6 +218,7 @@ lua_translator@*wanxiang.input_statistics
 |---|---|
 | `src/rime/sstable.rs` | LevelDB SSTable 只读解析 |
 | `src/rime/wal.rs` | LevelDB WAL 解析（尾部残缺记录丢弃） |
+| `src/rime/snappy.rs` | Snappy block 解压（Linux 的 LevelDB 使用） |
 | `src/rime/parser.rs` | 内部 key 解析与按天聚合 |
 | `src/store.rs` | 追加式 JSONL 存储与幂等折叠 |
 | `src/sync.rs` | 定时同步编排与共享状态 |

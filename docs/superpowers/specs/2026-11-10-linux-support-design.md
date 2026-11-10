@@ -21,6 +21,7 @@
 3. `muda 0.15` 的 `MenuItem::set_text` 在 Linux 可用，可在同步后原地更新菜单文案。
 4. `libappindicator-sys` 在运行时动态加载 `libayatana-appindicator3.so.1` 或 `libappindicator3.so.1`；编译期需要 GTK3 开发包（`tray-icon` → `muda` → `gtk`）。
 5. 本机 `graphical-session.target` 处于 active，且 systemd 用户环境已导入 `WAYLAND_DISPLAY` / `DISPLAY` / `DBUS_SESSION_BUS_ADDRESS`。
+6. Linux（rime 1.17 / fcitx5）的 LevelDB block 使用 Snappy 压缩（type=1），而 macOS Squirrel 为未压缩。解析层需同时支持 `none` 与 Snappy；Snappy 解压自行实现，不新增依赖。
 
 ## 3. 方案
 
@@ -101,6 +102,8 @@ README 增加 Linux 章节：
 | 层级 | 方式 |
 |---|---|
 | 路径解析 | 纯函数单测：覆盖 XDG 覆盖、探测顺序、回退默认值 |
+| Snappy 解压 | literal / 重叠 copy / 单字节 offset / 截断 / 非法 offset / 长度不符 |
+| SSTable | 补充 Snappy 压缩 block 的解析用例（原有用例保持） |
 | 现有回归 | `cargo test` 全量通过（51 个） |
 | 构建 | Linux `cargo build --release` 无警告 |
 | 手动 | 本机安装后核对：托盘菜单字数 == 网页今日字数；打字后 60 秒内更新；`systemctl --user status` 正常；卸载脚本清理干净 |

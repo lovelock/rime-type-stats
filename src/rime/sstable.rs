@@ -30,7 +30,7 @@ impl fmt::Display for TableError {
             TableError::TooShort => write!(f, "文件长度不足，不是合法的 SSTable"),
             TableError::BadMagic => write!(f, "footer magic 不匹配，可能不是 LevelDB 文件"),
             TableError::UnsupportedCompression(t) => {
-                write!(f, "不支持的 block 压缩类型 {t}（仅支持未压缩）")
+                write!(f, "不支持的 block 压缩类型 {t}（仅支持 none / snappy）")
             }
             TableError::Malformed(msg) => write!(f, "SSTable 结构异常：{msg}"),
         }
@@ -39,8 +39,8 @@ impl fmt::Display for TableError {
 
 impl std::error::Error for TableError {}
 
-/// 取出 `[off, off+size)` 的 block payload，并校验压缩类型为 none。
-fn block_payload(bytes: &[u8], off: u64, size: u64) -> Result<&[u8], TableError> {
+/// 取出 `[off, off+size)` 的 block payload，按需做 Snappy 解压。
+fn block_payload(bytes: &[u8], off: u64, size: u64) -> Result<Vec<u8>, TableError> {
     let start = usize::try_from(off).map_err(|_| TableError::Malformed("block 偏移溢出"))?;
     let len = usize::try_from(size).map_err(|_| TableError::Malformed("block 长度溢出"))?;
     let end = start
@@ -53,11 +53,12 @@ fn block_payload(bytes: &[u8], off: u64, size: u64) -> Result<&[u8], TableError>
         return Err(TableError::Malformed("block 超出文件范围"));
     }
 
-    let compression = bytes[end];
-    if compression != 0 {
-        return Err(TableError::UnsupportedCompression(compression));
+    match bytes[end] {
+        0 => Ok(bytes[start..end].to_vec()),
+        1 => crate::rime::snappy::decompress(&bytes[start..end])
+            .map_err(|_| TableError::Malformed("Snappy block 解压失败")),
+        other => Err(TableError::UnsupportedCompression(other)),
     }
-    Ok(&bytes[start..end])
 }
 
 /// 顺序重放一个 block 的全部条目（前缀压缩在重放中自然还原）。
@@ -146,7 +147,7 @@ pub fn parse_table(bytes: &[u8]) -> Result<Vec<TableEntry>, TableError> {
         read_varint(footer, &mut pos).ok_or(TableError::Malformed("footer 解析失败"))?;
 
     let index_payload = block_payload(bytes, index_off, index_size)?;
-    let index_entries = block_entries(index_payload)?;
+    let index_entries = block_entries(&index_payload)?;
 
     let mut all = Vec::new();
     for entry in index_entries {
@@ -156,7 +157,7 @@ pub fn parse_table(bytes: &[u8]) -> Result<Vec<TableEntry>, TableError> {
         let size = read_varint(&entry.value, &mut hpos)
             .ok_or(TableError::Malformed("block handle 长度解码失败"))?;
         let payload = block_payload(bytes, off, size)?;
-        all.extend(block_entries(payload)?);
+        all.extend(block_entries(&payload)?);
     }
 
     Ok(all)
@@ -169,6 +170,34 @@ mod tests {
     /// 构造一个只含单个 data block 的最小合法 SSTable。
     /// 条目：("a", "1") ("ab", "2")
     fn build_minimal_table() -> Vec<u8> {
+        build_table(false)
+    }
+
+    /// Snappy literal 编码（本测试的 block 都小于 60 字节）。
+    fn snappy_literal(payload: &[u8]) -> Vec<u8> {
+        fn push_varint(out: &mut Vec<u8>, mut v: u64) {
+            loop {
+                let mut b = (v & 0x7f) as u8;
+                v >>= 7;
+                if v != 0 {
+                    b |= 0x80;
+                }
+                out.push(b);
+                if v == 0 {
+                    return;
+                }
+            }
+        }
+
+        assert!(payload.len() <= 60, "测试数据应能用单个 literal 编码");
+        let mut out = Vec::new();
+        push_varint(&mut out, payload.len() as u64);
+        out.push(((payload.len() - 1) << 2) as u8);
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn build_table(compress: bool) -> Vec<u8> {
         fn push_varint(out: &mut Vec<u8>, mut v: u64) {
             loop {
                 let mut b = (v & 0x7f) as u8;
@@ -202,16 +231,22 @@ mod tests {
         block.extend_from_slice(&1u32.to_le_bytes());
 
         // LevelDB 的 block payload 尺寸包含末尾 4 字节 restart count
-        let block_payload_len = block.len();
         let mut file = Vec::new();
-        file.extend_from_slice(&block); // data block 位于偏移 0
-        file.push(0); // compression = none
+        let data_size = if compress {
+            let stored = snappy_literal(&block);
+            file.extend_from_slice(&stored);
+            stored.len()
+        } else {
+            file.extend_from_slice(&block);
+            block.len()
+        };
+        file.push(if compress { 1 } else { 0 }); // compression
         file.extend_from_slice(&0u32.to_le_bytes()); // crc 占位，解析时不校验
 
-        // index block：一个条目，key="a"，value = data block 的 handle(off=0, size=payload_len)
+        // index block：一个条目，key="a"，value = data block 的 handle(off=0, size)
         let mut handle = Vec::new();
         push_varint(&mut handle, 0); // data block offset
-        push_varint(&mut handle, block_payload_len as u64);
+        push_varint(&mut handle, data_size as u64);
 
         let mut index_block = Vec::new();
         push_varint(&mut index_block, 0); // shared
@@ -223,9 +258,15 @@ mod tests {
         index_block.extend_from_slice(&1u32.to_le_bytes()); // restart count
 
         let index_off = file.len() as u64;
-        let index_payload_len = index_block.len() as u64;
-        file.extend_from_slice(&index_block);
-        file.push(0);
+        let index_size = if compress {
+            let stored = snappy_literal(&index_block);
+            file.extend_from_slice(&stored);
+            stored.len()
+        } else {
+            file.extend_from_slice(&index_block);
+            index_block.len()
+        };
+        file.push(if compress { 1 } else { 0 });
         file.extend_from_slice(&0u32.to_le_bytes());
 
         // footer
@@ -233,7 +274,7 @@ mod tests {
         push_varint(&mut footer, 0); // metaindex offset
         push_varint(&mut footer, 0); // metaindex size
         push_varint(&mut footer, index_off);
-        push_varint(&mut footer, index_payload_len);
+        push_varint(&mut footer, index_size as u64);
         footer.resize(40, 0);
         footer.extend_from_slice(&0xdb4775248b80fb57u64.to_le_bytes());
         file.extend_from_slice(&footer);
@@ -269,10 +310,21 @@ mod tests {
         let mut table = build_minimal_table();
         let len = table.len();
         // index block trailer 位于 footer(48 字节) 之前 5 字节：type + crc32
-        table[len - 48 - 5] = 1;
+        table[len - 48 - 5] = 2;
         assert!(matches!(
             parse_table(&table),
-            Err(TableError::UnsupportedCompression(1))
+            Err(TableError::UnsupportedCompression(2))
         ));
+    }
+
+    #[test]
+    fn parses_snappy_compressed_blocks() {
+        let table = build_table(true);
+        let entries = parse_table(&table).expect("Snappy 压缩的 block 应能解析");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, b"a");
+        assert_eq!(entries[0].value, b"1");
+        assert_eq!(entries[1].key, b"ab");
+        assert_eq!(entries[1].value, b"2");
     }
 }
