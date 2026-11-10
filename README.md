@@ -80,6 +80,12 @@ cargo run                      # 完整模式（菜单栏 + 网页）
 
 单文件 HTML，无框架、无 CDN、无外部字体，完全离线可用。
 
+<img width="257" height="27" alt="image" src="https://github.com/user-attachments/assets/295e132b-3de6-4ce2-88c5-2073aadd4084" />
+
+
+<img width="1284" height="795" alt="image" src="https://github.com/user-attachments/assets/8c7b7971-8a6b-4b45-a8dd-779ac73f0fa4" />
+
+
 ## 前提
 
 `~/Library/Rime` 下已启用万象的 `input_statistics`，即 `wanxiang_pro.schema.yaml` 中包含：
