@@ -145,6 +145,9 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                         .with_tooltip("Rime 打字统计");
 
                     let icon = builder.build();
+                    if let Err(err) = &icon {
+                        eprintln!("创建托盘图标失败：{err}");
+                    }
 
                     if let Ok(icon) = icon {
                         tray = Some(icon);
