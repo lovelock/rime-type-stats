@@ -2,6 +2,9 @@
 name = "rime-type-stats"
 version = "0.1.0"
 edition = "2021"
+description = "统计 Rime 每日打字字数，提供系统托盘与本地仪表盘"
+license = "MIT"
+repository = "https://github.com/lovelock/rime-type-stats"
 
 [lib]
 name = "rime_type_stats"

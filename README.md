@@ -103,6 +103,23 @@ Debian/Ubuntu：`libayatana-appindicator3-1`）。
 
 重新部署（改完代码后）直接重跑 `scripts/install.sh` 即可。
 
+### Linux 安装包
+
+从 [Releases](https://github.com/lovelock/rime-type-stats/releases) 下载对应格式（x86_64）：
+
+- Debian / Ubuntu：`sudo apt install ./rime-type-stats_*.deb`
+- Fedora / RHEL：`sudo dnf install ./rime-type-stats-*.rpm`（RHEL 9 需启用 EPEL）
+- Arch：`sudo pacman -U ./rime-type-stats-*.pkg.tar.zst`
+
+然后启用用户服务：
+
+```bash
+systemctl --user enable --now rime-type-stats
+```
+
+运行时依赖由包管理器处理。安装包与源码脚本二选一；如果之前用过
+`scripts/install.sh`，先执行 `scripts/uninstall.sh` 再安装包。
+
 ## 发布
 
 推送 `v*` 标签即自动构建 DMG 并创建 GitHub Release：

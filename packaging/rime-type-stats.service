@@ -1,0 +1,12 @@
+[Unit]
+Description=Rime typing statistics
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/rime-type-stats
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
