@@ -106,10 +106,100 @@ jobs:
           overwrite: true
           retention-days: 30
 
+  build-linux:
+    name: build x86_64 packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 安装编译与打包工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev pkg-config rpm zstd
+
+      - name: 计算版本号
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${REF_NAME#v}"
+          fi
+          case "$version" in
+            ""|*[!0-9A-Za-z.+-]*)
+              echo "!! 非法版本号：$version" >&2
+              exit 1
+              ;;
+          esac
+          nfpm_version="${version//-/.}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "nfpm_version=$nfpm_version" >> "$GITHUB_OUTPUT"
+          echo "版本号：$version（nfpm：$nfpm_version）"
+
+      - name: 单元测试
+        run: cargo test --locked
+
+      - name: 编译
+        run: cargo build --release --locked
+
+      - name: 安装 nfpm
+        env:
+          NFPM_VERSION: v2.48.0
+        run: |
+          version="${NFPM_VERSION#v}"
+          curl -fsSL -o /tmp/nfpm.tar.gz \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_VERSION}/nfpm_${version}_Linux_x86_64.tar.gz"
+          curl -fsSL -o /tmp/nfpm-checksums.txt \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_VERSION}/checksums.txt"
+          (cd /tmp && grep "nfpm_${version}_Linux_x86_64.tar.gz$" nfpm-checksums.txt | sha256sum -c -)
+          tar -xzf /tmp/nfpm.tar.gz -C /tmp nfpm
+          /tmp/nfpm --version
+
+      - name: 生成包
+        env:
+          VERSION: ${{ steps.version.outputs.nfpm_version }}
+        run: |
+          mkdir -p dist
+          sed "s|__VERSION__|${VERSION}|g" packaging/nfpm.yaml > "$RUNNER_TEMP/nfpm.yaml"
+          for packager in deb rpm archlinux; do
+            /tmp/nfpm package -p "$packager" -f "$RUNNER_TEMP/nfpm.yaml" -t dist/
+          done
+          ls -l dist
+
+      - name: 校验产物
+        run: |
+          shopt -s nullglob
+          debs=(dist/*.deb); rpms=(dist/*.rpm); arch=(dist/*.pkg.tar.zst)
+          test ${#debs[@]} -eq 1 || { echo "deb 数量异常" >&2; exit 1; }
+          test ${#rpms[@]} -eq 1 || { echo "rpm 数量异常" >&2; exit 1; }
+          test ${#arch[@]} -eq 1 || { echo "arch 数量异常" >&2; exit 1; }
+          dpkg-deb -c "${debs[0]}" | grep -q 'usr/bin/rime-type-stats'
+          rpm -qp --requires "${rpms[0]}" | grep -qx gtk3
+          zstd -dc "${arch[0]}" | tar -tf - | grep -q 'usr/lib/systemd/user/rime-type-stats.service'
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-x86_64-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
   # 发布单独起作业：构建阶段的第三方 action 全程只有只读权限。
   publish:
     name: publish release
-    needs: build-dmg
+    needs: [build-dmg, build-linux]
     if: github.event_name == 'push'
     runs-on: macos-15
     permissions:
@@ -134,6 +224,11 @@ jobs:
           name: dmg-aarch64-${{ steps.version.outputs.version }}
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-${{ steps.version.outputs.version }}
+          path: dist
+
       - name: 发布 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,8 +236,8 @@ jobs:
         run: |
           tag="$GITHUB_REF_NAME"
           shopt -s nullglob
-          files=(dist/*.dmg)
-          test ${#files[@]} -gt 0 || { echo "没有可发布的 DMG" >&2; exit 1; }
+          files=(dist/*.dmg dist/*.deb dist/*.rpm dist/*.pkg.tar.zst)
+          test ${#files[@]} -gt 0 || { echo "没有可发布的产物" >&2; exit 1; }
 
           # 含 `-` 的版本（0.1.0-beta.1）按预发布处理
           pre=(--prerelease=false)

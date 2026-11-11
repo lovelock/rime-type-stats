@@ -1,0 +1,33 @@
+name: rime-type-stats
+arch: amd64
+platform: linux
+version: __VERSION__
+release: "1"
+section: utils
+priority: optional
+maintainer: lovelock <lovelock@users.noreply.github.com>
+description: |
+  统计 Rime 每日打字字数，提供系统托盘与本地仪表盘。
+vendor: lovelock
+homepage: https://github.com/lovelock/rime-type-stats
+license: MIT
+contents:
+  - src: target/release/rime-type-stats
+    dst: /usr/bin/rime-type-stats
+  - src: packaging/rime-type-stats.service
+    dst: /usr/lib/systemd/user/rime-type-stats.service
+  - src: LICENSE
+    dst: /usr/share/licenses/rime-type-stats/LICENSE
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0 | libgtk-3-0t64
+      - libayatana-appindicator3-1
+  rpm:
+    depends:
+      - gtk3
+      - libayatana-appindicator-gtk3
+  archlinux:
+    depends:
+      - gtk3
+      - libayatana-appindicator

@@ -46,3 +46,95 @@ jobs:
 
       - name: cargo build (release)
         run: cargo build --release --locked
+
+  test-linux:
+    name: fmt / clippy / test (x86_64 Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --locked
+
+      - name: cargo build (release)
+        run: cargo build --release --locked
+
+  package-linux:
+    name: packages (x86_64 dry run)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 安装编译与打包工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev pkg-config rpm zstd
+
+      - name: 编译
+        run: cargo build --release --locked
+
+      - name: 安装 nfpm
+        env:
+          NFPM_VERSION: v2.48.0
+        run: |
+          version="${NFPM_VERSION#v}"
+          curl -fsSL -o /tmp/nfpm.tar.gz \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_VERSION}/nfpm_${version}_Linux_x86_64.tar.gz"
+          curl -fsSL -o /tmp/nfpm-checksums.txt \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_VERSION}/checksums.txt"
+          (cd /tmp && grep "nfpm_${version}_Linux_x86_64.tar.gz$" nfpm-checksums.txt | sha256sum -c -)
+          tar -xzf /tmp/nfpm.tar.gz -C /tmp nfpm
+          /tmp/nfpm --version
+
+      - name: 生成包
+        env:
+          VERSION: 0.0.0.dev
+        run: |
+          mkdir -p dist
+          sed "s|__VERSION__|${VERSION}|g" packaging/nfpm.yaml > "$RUNNER_TEMP/nfpm.yaml"
+          for packager in deb rpm archlinux; do
+            /tmp/nfpm package -p "$packager" -f "$RUNNER_TEMP/nfpm.yaml" -t dist/
+          done
+          ls -l dist
+
+      - name: 校验产物
+        run: |
+          shopt -s nullglob
+          debs=(dist/*.deb); rpms=(dist/*.rpm); arch=(dist/*.pkg.tar.zst)
+          test ${#debs[@]} -eq 1 || { echo "deb 数量异常" >&2; exit 1; }
+          test ${#rpms[@]} -eq 1 || { echo "rpm 数量异常" >&2; exit 1; }
+          test ${#arch[@]} -eq 1 || { echo "arch 数量异常" >&2; exit 1; }
+          dpkg-deb -c "${debs[0]}" | grep -q 'usr/bin/rime-type-stats'
+          rpm -qp --requires "${rpms[0]}" | grep -qx gtk3
+          zstd -dc "${arch[0]}" | tar -tf - | grep -q 'usr/lib/systemd/user/rime-type-stats.service'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-x86_64-0.0.0.dev
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7

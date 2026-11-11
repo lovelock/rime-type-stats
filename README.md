@@ -1,14 +1,19 @@
 # rime-type-stats
 
-统计每天在 macOS（Squirrel）上用 Rime 打出的字数。菜单栏常驻显示今日字数，点开查看日 / 周 / 月趋势曲线。
+统计每天在 macOS（Squirrel）或 Linux（fcitx5-rime / ibus-rime）上用 Rime 打出的字数。菜单栏 / 系统托盘常驻显示今日字数，点开查看日 / 周 / 月趋势曲线。
 
 ## 原理
 
-直接**只读**解析 `~/Library/Rime/stats.userdb`（LevelDB）中的每日统计键：
+直接**只读**解析 Rime 的 `stats.userdb`（LevelDB）中的每日统计键：
 
-- 按文件名打开 `*.ldb` 与 `*.log`，不经过 LevelDB 库，因此不触碰 Squirrel 持有的 `LOCK`
+- macOS：`~/Library/Rime/stats.userdb`
+- Linux：`~/.local/share/fcitx5/rime/stats.userdb`，同时会探测 ibus / fcitx 的配置目录
+
+解析时：
+
+- 按文件名打开 `*.ldb` 与 `*.log`，不经过 LevelDB 库，因此不触碰输入法持有的 `LOCK`
 - 不需要复制快照、不加文件锁、不修改任何 Rime 配置
-- 内置纯 Rust 的 SSTable 与 WAL 解析器，无第三方压缩依赖
+- 内置纯 Rust 的 SSTable / WAL / Snappy 解析，无第三方压缩依赖
 
 ### 这个库是万象来维护的
 
@@ -27,7 +32,11 @@
 因为数据源在万象侧，**历史数据从启用那天起自动补齐**，无需等待本工具累积；
 同时万象改字段名或改统计算法时，本工具也会跟着失效（见「已知限制」）。
 
-本地只在 `~/Library/Application Support/rime-type-stats/` 保存一份追加式日志 `events.jsonl`。
+本地只在数据目录保存一份追加式日志 `events.jsonl`：
+
+- macOS：`~/Library/Application Support/rime-type-stats/`
+- Linux：`~/.local/share/rime-type-stats/`
+
 折叠时历史日期对每个字段取最大值，因此重复同步、乱序同步、进程重启后重放都收敛到相同结果（幂等）。
 当天例外：万象的当日计数会在 Rime 重建统计库时回落，所以当天以最后一条记录为准。
 
@@ -58,6 +67,10 @@ git clone https://github.com/lovelock/rime-type-stats && cd rime-type-stats
 scripts/install.sh
 ```
 
+`scripts/install.sh` 按平台分派到对应的安装脚本。
+
+### macOS
+
 安装脚本会编译 release、安装到
 `~/Library/Application Support/rime-type-stats/bin/`、做 ad-hoc 签名，并写入
 `~/Library/LaunchAgents/com.lovelock.rime-type-stats.plist` 注册登录自启。
@@ -70,9 +83,47 @@ scripts/install.sh
 
 重新部署（改完代码后）直接重跑 `scripts/install.sh` 即可，它会先卸载旧的 LaunchAgent。
 
+### Linux
+
+编译依赖：GTK3 开发包（Arch：`gtk3`；Debian/Ubuntu：`libgtk-3-dev`）。
+运行时还需要 AppIndicator（Arch：`libappindicator-gtk3` 或 `libayatana-appindicator`；
+Debian/Ubuntu：`libayatana-appindicator3-1`）。
+
+安装脚本会编译 release、安装到 `~/.local/share/rime-type-stats/bin/`，写入
+`~/.config/systemd/user/rime-type-stats.service`，注册为 systemd 用户服务并立即启动。
+
+安装后：
+
+- 托盘出现蓝色键盘图标
+- 点开菜单：第一项「今日 N 字」，以及打开统计 / 立即同步 / 打开数据目录 / 退出
+- 查看日志：`journalctl --user -u rime-type-stats -f`
+
+**Linux 托盘差异**：AppIndicator 不支持 macOS 式的状态栏标题，今日字数放在菜单第一项，
+需要点开图标查看；网页仪表盘不受影响。
+
+重新部署（改完代码后）直接重跑 `scripts/install.sh` 即可。
+
+### Linux 安装包
+
+从 [Releases](https://github.com/lovelock/rime-type-stats/releases) 下载对应格式（x86_64）：
+
+- Debian / Ubuntu：`sudo apt install ./rime-type-stats_*.deb`
+- Fedora / RHEL：`sudo dnf install ./rime-type-stats-*.rpm`（RHEL 9 需启用 EPEL）
+- Arch：`sudo pacman -U ./rime-type-stats-*.pkg.tar.zst`
+
+然后启用用户服务：
+
+```bash
+systemctl --user enable --now rime-type-stats
+```
+
+运行时依赖由包管理器处理。安装包与源码脚本二选一；如果之前用过
+`scripts/install.sh`，先执行 `scripts/uninstall.sh` 再安装包。
+
 ## 发布
 
-推送 `v*` 标签即自动构建 DMG 并创建 GitHub Release：
+推送 `v*` 标签即自动构建 macOS DMG 与 Linux 安装包（`.deb` / `.rpm` / Arch `.pkg.tar.zst`），
+并创建 GitHub Release：
 
 ```bash
 git tag v0.1.0
@@ -101,9 +152,12 @@ scripts/bundle.sh 0.1.0   # 产物：dist/rime-type-stats_0.1.0_arm64.dmg
 scripts/uninstall.sh
 ```
 
-数据目录会保留。如需彻底清除，手动删除 `~/Library/Application Support/rime-type-stats`。
+数据目录会保留。如需彻底清除：
 
-## 资源占用
+- macOS：手动删除 `~/Library/Application Support/rime-type-stats`
+- Linux：手动删除 `~/.local/share/rime-type-stats`
+
+## 资源占用（macOS）
 
 菜单栏常驻进程实测：**CPU 0.0%、4 个线程、phys_footprint 17MB**。
 
@@ -118,16 +172,18 @@ CPU 占用有一条容易踩的坑：AppKit 的 `setTitle` 即使文本没有变
 ## 开发
 
 ```bash
-cargo test                     # 单元测试（52 个）
+cargo test                     # 单元测试
 cargo run -- --dump            # 打印解析到的每日数据
 cargo run -- --serve-only      # 只起 HTTP 服务，便于调试前端
-cargo run                      # 完整模式（菜单栏 + 网页）
+cargo run                      # 完整模式（托盘 + 网页）
 ```
 
 环境变量可覆盖默认路径：
 
-- `RIME_TYPE_STATS_RIME_DIR` — Rime 统计库目录，默认 `~/Library/Rime/stats.userdb`（注意是子目录，`read_dir` 只扫描一层）
-- `RIME_TYPE_STATS_DATA_DIR` — 数据目录，默认 `~/Library/Application Support/rime-type-stats`
+- `RIME_TYPE_STATS_RIME_DIR` — Rime 统计库目录。macOS 默认 `~/Library/Rime/stats.userdb`；
+  Linux 自动探测 fcitx5 / ibus / fcitx 的用户目录（注意是 `stats.userdb` 子目录，`read_dir` 只扫描一层）
+- `RIME_TYPE_STATS_DATA_DIR` — 数据目录。macOS 默认 `~/Library/Application Support/rime-type-stats`；
+  Linux 默认 `~/.local/share/rime-type-stats`
 
 ## 仪表盘
 
@@ -147,14 +203,15 @@ cargo run                      # 完整模式（菜单栏 + 网页）
 ## 前提
 
 安装并启用 [万象拼音](https://github.com/amzxyz/rime-wanxiang)，且其
-`input_statistics` 模块处于开启状态。以万象 Pro 版为例，`wanxiang_pro.schema.yaml`
+`input_statistics` 模块处于开启状态（macOS 用户目录为 `~/Library/Rime`，
+Linux 通常为 `~/.local/share/fcitx5/rime`）。以万象 Pro 版为例，`wanxiang_pro.schema.yaml`
 的 `engine/translators` 中应包含：
 
 ```yaml
 lua_translator@*wanxiang.input_statistics
 ```
 
-模块会在 `~/Library/Rime/` 下创建 `stats.userdb`。库名取自万象配置项
+模块会在 Rime 用户目录下创建 `stats.userdb`。库名取自万象配置项
 `input_stats/db_name`，默认 `stats`；若你改过这一项，需要同步设置本工具的
 `RIME_TYPE_STATS_RIME_DIR`。
 
@@ -179,11 +236,13 @@ lua_translator@*wanxiang.input_statistics
 |---|---|
 | `src/rime/sstable.rs` | LevelDB SSTable 只读解析 |
 | `src/rime/wal.rs` | LevelDB WAL 解析（尾部残缺记录丢弃） |
+| `src/rime/snappy.rs` | Snappy block 解压（Linux 的 LevelDB 使用） |
 | `src/rime/parser.rs` | 内部 key 解析与按天聚合 |
 | `src/store.rs` | 追加式 JSONL 存储与幂等折叠 |
 | `src/sync.rs` | 定时同步编排与共享状态 |
 | `src/server.rs` | 本地 HTTP 服务（`std::net` 单线程） |
-| `src/tray.rs` | 菜单栏事件循环 |
+| `src/paths.rs` | 跨平台路径解析（XDG / macOS 目录探测） |
+| `src/tray.rs` | 菜单栏 / 系统托盘事件循环 |
 | `src/web/index.html` | 内嵌仪表盘 |
 
 设计文档见 `docs/superpowers/specs/`，实现计划见 `docs/superpowers/plans/`。

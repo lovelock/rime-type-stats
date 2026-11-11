@@ -2,6 +2,9 @@
 name = "rime-type-stats"
 version = "0.1.0"
 edition = "2021"
+description = "统计 Rime 每日打字字数，提供系统托盘与本地仪表盘"
+license = "MIT"
+repository = "https://github.com/lovelock/rime-type-stats"
 
 [lib]
 name = "rime_type_stats"
@@ -15,5 +18,5 @@ path = "src/main.rs"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tray-icon = "0.19"
+tray-icon = { version = "0.19", default-features = false }
 tao = "0.30"
