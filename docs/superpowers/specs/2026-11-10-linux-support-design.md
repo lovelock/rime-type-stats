@@ -1,11 +1,11 @@
-# rime-counter Linux 兼容设计
+# rime-type-stats Linux 兼容设计
 
 日期：2026-11-10
 状态：已确认
 
 ## 1. 目标
 
-在保留 macOS 现有行为的前提下，让 rime-counter 在 Linux（以 fcitx5-rime 为主）上可用：
+在保留 macOS 现有行为的前提下，让 rime-type-stats 在 Linux（以 fcitx5-rime 为主）上可用：
 
 - 从 Linux 的 Rime 用户目录读取同一份 `stats.userdb` 每日统计
 - 系统托盘常驻，菜单第一项显示今日字数
@@ -48,17 +48,17 @@
 
 Rime 目录按顺序探测，取第一个存在 `stats.userdb` 的候选；都不存在时用 fcitx5 默认路径（便于错误信息指向最可能的目录）：
 
-1. `$RIME_COUNTER_RIME_DIR`（显式覆盖，最高优先级）
+1. `$RIME_TYPE_STATS_RIME_DIR`（显式覆盖，最高优先级）
 2. `$XDG_DATA_HOME/fcitx5/rime/stats.userdb`（默认 `~/.local/share/fcitx5/rime/stats.userdb`）
 3. `~/.config/ibus/rime/stats.userdb`
 4. `~/.config/fcitx/rime/stats.userdb`
 5. `~/.config/fcitx5/rime/stats.userdb`
 
-数据目录：`$RIME_COUNTER_DATA_DIR` → `$XDG_DATA_HOME/rime-counter` → `~/.local/share/rime-counter`。
+数据目录：`$RIME_TYPE_STATS_DATA_DIR` → `$XDG_DATA_HOME/rime-type-stats` → `~/.local/share/rime-type-stats`。
 
 ### macOS
 
-保持现状：`$RIME_COUNTER_RIME_DIR` → `~/Library/Rime/stats.userdb`；数据目录 `$RIME_COUNTER_DATA_DIR` → `~/Library/Application Support/rime-counter`。
+保持现状：`$RIME_TYPE_STATS_RIME_DIR` → `~/Library/Rime/stats.userdb`；数据目录 `$RIME_TYPE_STATS_DATA_DIR` → `~/Library/Application Support/rime-type-stats`。
 
 ## 5. 托盘
 
@@ -78,13 +78,13 @@ Rime 目录按顺序探测，取第一个存在 `stats.userdb` 的候选；都�
 Linux 安装：
 
 1. `cargo build --release`
-2. 安装到 `${XDG_DATA_HOME:-$HOME/.local/share}/rime-counter/bin/rime-counter`
-3. 写 systemd 用户服务 `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/rime-counter.service`
+2. 安装到 `${XDG_DATA_HOME:-$HOME/.local/share}/rime-type-stats/bin/rime-type-stats`
+3. 写 systemd 用户服务 `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/rime-type-stats.service`
    - `After=graphical-session.target`、`PartOf=graphical-session.target`
    - `Restart=on-failure`、`RestartSec=5`
    - `WantedBy=graphical-session.target`
 4. `systemctl --user daemon-reload`，`enable`，`restart`
-5. 通过 `systemctl --user is-active` 等待就绪，并提示 `journalctl --user -u rime-counter`
+5. 通过 `systemctl --user is-active` 等待就绪，并提示 `journalctl --user -u rime-type-stats`
 
 不依赖 systemd 的环境不在本次范围内，可直接运行二进制。
 

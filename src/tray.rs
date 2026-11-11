@@ -15,11 +15,11 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 #[cfg(target_os = "macos")]
 use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
 
-use crate::icons::ICON_RGBA;
 #[cfg(target_os = "macos")]
 use crate::icons::menu_bar_title;
 #[cfg(not(target_os = "macos"))]
 use crate::icons::today_menu_text;
+use crate::icons::ICON_RGBA;
 use crate::store::Store;
 use crate::sync::{sync_once, SyncState};
 
@@ -58,12 +58,7 @@ fn today_chars(state: &SyncState) -> u64 {
 }
 
 /// 运行一次同步，成功后通知 UI 刷新显示。
-fn sync_and_notify(
-    rime_dir: &Path,
-    data_dir: &Path,
-    state: &SyncState,
-    notify: impl Fn(),
-) {
+fn sync_and_notify(rime_dir: &Path, data_dir: &Path, state: &SyncState, notify: impl Fn()) {
     if let Ok(store) = Store::open(data_dir) {
         state.replace(sync_once(rime_dir, &store));
         notify();
@@ -87,13 +82,11 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
         let proxy = proxy.clone();
         let rime_dir = rime_dir.clone();
         let data_dir = data_dir.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(SYNC_INTERVAL);
-                sync_and_notify(&rime_dir, &data_dir, &state, || {
-                    let _ = proxy.send_event(UserEvent::Synced);
-                });
-            }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(SYNC_INTERVAL);
+            sync_and_notify(&rime_dir, &data_dir, &state, || {
+                let _ = proxy.send_event(UserEvent::Synced);
+            });
         });
     }
 
@@ -250,10 +243,8 @@ mod tests {
 
     #[test]
     fn sync_and_notify_calls_notifier_after_successful_sync() {
-        let dir = std::env::temp_dir().join(format!(
-            "rime-counter-tray-sync-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("rime-type-stats-tray-sync-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

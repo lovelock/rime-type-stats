@@ -108,6 +108,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     fn linux_icon_uses_accent_color() {
         let (_, _, rgba) = ICON_RGBA;
         let px = rgba.chunks_exact(4).find(|p| p[3] > 200).unwrap();
@@ -116,6 +117,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     fn macos_icon_is_white_template() {
         let (_, _, rgba) = ICON_RGBA;
         let px = rgba.chunks_exact(4).find(|p| p[3] > 200).unwrap();

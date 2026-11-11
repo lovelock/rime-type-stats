@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 停止并移除 rime-counter 的 systemd 用户服务与二进制，保留统计数据。
+# 停止并移除 rime-type-stats 的 systemd 用户服务与二进制，保留统计数据。
 set -euo pipefail
 
-APP_NAME="rime-counter"
+APP_NAME="rime-type-stats"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 UNIT="$CONFIG_HOME/systemd/user/$APP_NAME.service"

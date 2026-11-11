@@ -51,13 +51,13 @@ pub fn data_dir() -> PathBuf {
     }
 }
 
-/// Linux：按 `RIME_COUNTER_RIME_DIR` → fcitx5 → ibus → fcitx4 → fcitx5（配置目录）探测。
+/// Linux：按 `RIME_TYPE_STATS_RIME_DIR` → fcitx5 → ibus → fcitx4 → fcitx5（配置目录）探测。
 pub fn linux_rime_dir(
     env: &dyn Fn(&str) -> Option<OsString>,
     home: &Path,
     exists: &dyn Fn(&Path) -> bool,
 ) -> PathBuf {
-    if let Some(dir) = env_path(env, "RIME_COUNTER_RIME_DIR") {
+    if let Some(dir) = env_path(env, "RIME_TYPE_STATS_RIME_DIR") {
         return dir;
     }
 
@@ -75,21 +75,22 @@ pub fn linux_rime_dir(
         .unwrap_or_else(|| candidates[0].clone())
 }
 
-/// Linux：`RIME_COUNTER_DATA_DIR` → `$XDG_DATA_HOME/rime-counter` → `~/.local/share/rime-counter`。
+/// Linux：`RIME_TYPE_STATS_DATA_DIR` → `$XDG_DATA_HOME/rime-type-stats` → `~/.local/share/rime-type-stats`。
 pub fn linux_data_dir(env: &dyn Fn(&str) -> Option<OsString>, home: &Path) -> PathBuf {
-    env_path(env, "RIME_COUNTER_DATA_DIR").unwrap_or_else(|| xdg_data_home(env, home).join("rime-counter"))
+    env_path(env, "RIME_TYPE_STATS_DATA_DIR")
+        .unwrap_or_else(|| xdg_data_home(env, home).join("rime-type-stats"))
 }
 
-/// macOS：`RIME_COUNTER_RIME_DIR` → `~/Library/Rime/stats.userdb`。
+/// macOS：`RIME_TYPE_STATS_RIME_DIR` → `~/Library/Rime/stats.userdb`。
 pub fn macos_rime_dir(env: &dyn Fn(&str) -> Option<OsString>, home: &Path) -> PathBuf {
-    env_path(env, "RIME_COUNTER_RIME_DIR")
+    env_path(env, "RIME_TYPE_STATS_RIME_DIR")
         .unwrap_or_else(|| home.join("Library/Rime/stats.userdb"))
 }
 
-/// macOS：`RIME_COUNTER_DATA_DIR` → `~/Library/Application Support/rime-counter`。
+/// macOS：`RIME_TYPE_STATS_DATA_DIR` → `~/Library/Application Support/rime-type-stats`。
 pub fn macos_data_dir(env: &dyn Fn(&str) -> Option<OsString>, home: &Path) -> PathBuf {
-    env_path(env, "RIME_COUNTER_DATA_DIR")
-        .unwrap_or_else(|| home.join("Library/Application Support/rime-counter"))
+    env_path(env, "RIME_TYPE_STATS_DATA_DIR")
+        .unwrap_or_else(|| home.join("Library/Application Support/rime-type-stats"))
 }
 
 #[cfg(test)]
@@ -115,7 +116,7 @@ mod tests {
     #[test]
     fn linux_data_dir_prefers_env_override() {
         let env = env_of(&[
-            ("RIME_COUNTER_DATA_DIR", "/custom/data"),
+            ("RIME_TYPE_STATS_DATA_DIR", "/custom/data"),
             ("XDG_DATA_HOME", "/xdg"),
         ]);
         assert_eq!(
@@ -129,7 +130,7 @@ mod tests {
         let env = env_of(&[("XDG_DATA_HOME", "/xdg")]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/xdg/rime-counter")
+            PathBuf::from("/xdg/rime-type-stats")
         );
     }
 
@@ -138,20 +139,20 @@ mod tests {
         let env = env_of(&[]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/home/u/.local/share/rime-counter")
+            PathBuf::from("/home/u/.local/share/rime-type-stats")
         );
     }
 
     #[test]
     fn empty_env_values_are_ignored() {
         let env = env_of(&[
-            ("RIME_COUNTER_DATA_DIR", ""),
+            ("RIME_TYPE_STATS_DATA_DIR", ""),
             ("XDG_DATA_HOME", ""),
-            ("RIME_COUNTER_RIME_DIR", ""),
+            ("RIME_TYPE_STATS_RIME_DIR", ""),
         ]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/home/u/.local/share/rime-counter")
+            PathBuf::from("/home/u/.local/share/rime-type-stats")
         );
         assert_eq!(
             linux_rime_dir(&env, Path::new("/home/u"), &exists_in(&[])),
@@ -161,7 +162,7 @@ mod tests {
 
     #[test]
     fn linux_rime_dir_prefers_env_override() {
-        let env = env_of(&[("RIME_COUNTER_RIME_DIR", "/custom/stats.userdb")]);
+        let env = env_of(&[("RIME_TYPE_STATS_RIME_DIR", "/custom/stats.userdb")]);
         let exists = exists_in(&["/home/u/.local/share/fcitx5/rime/stats.userdb"]);
         assert_eq!(
             linux_rime_dir(&env, Path::new("/home/u"), &exists),
@@ -220,7 +221,7 @@ mod tests {
         );
         assert_eq!(
             macos_data_dir(&env, Path::new("/Users/u")),
-            PathBuf::from("/Users/u/Library/Application Support/rime-counter")
+            PathBuf::from("/Users/u/Library/Application Support/rime-type-stats")
         );
     }
 }

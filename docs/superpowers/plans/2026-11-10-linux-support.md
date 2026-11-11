@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在保持 macOS 行为不变的前提下，让 rime-counter 在 Linux（fcitx5-rime 为主）上通过系统托盘与网页仪表盘工作。
+**Goal:** 在保持 macOS 行为不变的前提下，让 rime-type-stats 在 Linux（fcitx5-rime 为主）上通过系统托盘与网页仪表盘工作。
 
 **Architecture:** 把平台相关的路径解析抽到纯函数 `paths` 模块；托盘用 `cfg` 隔离 macOS 专属 API，Linux 用 AppIndicator 菜单项显示今日字数；安装脚本按 `uname` 分派到 macOS LaunchAgent 或 Linux systemd 用户服务。解析、存储、同步、HTTP 层不改。
 
@@ -16,13 +16,13 @@
 - **解析层零改动**：`src/rime/`、`src/store.rs`、`src/sync.rs`、`src/server.rs` 不修改。
 - **只读 Rime 数据**：继续按文件名读取 `*.ldb` / `*.log`，不打开 LevelDB、不碰 `LOCK`。
 - **仅本地监听**：HTTP 仍绑定 `127.0.0.1`。
-- **环境变量覆盖优先**：`RIME_COUNTER_RIME_DIR` / `RIME_COUNTER_DATA_DIR` 语义不变。
+- **环境变量覆盖优先**：`RIME_TYPE_STATS_RIME_DIR` / `RIME_TYPE_STATS_DATA_DIR` 语义不变。
 - **中文注释与提交信息**：提交信息使用 Conventional Commits 前缀 + 中文正文。
 - **零新增依赖**：不新增 crate；Linux 支持靠现有 `tray-icon` / `tao` 的 Linux 实现。
 
 ## Review Focus
 
-- `XDG_DATA_HOME` / `RIME_COUNTER_DATA_DIR` 为空字符串时必须回退到默认值，不能生成相对路径或 `rime-counter` 在空目录下。
+- `XDG_DATA_HOME` / `RIME_TYPE_STATS_DATA_DIR` 为空字符串时必须回退到默认值，不能生成相对路径或 `rime-type-stats` 在空目录下。
 - 多个 Rime 候选目录同时存在时必须按 fcitx5 → ibus → fcitx4 → fcitx5(配置目录) 的固定顺序取第一个，结果可预测。
 - 一个候选目录都不存在时必须回退到 fcitx5 默认路径，让 `--dump` 的错误信息指向最可能的位置。
 - Rime 目录缺失或读取失败时，托盘不得退出或崩溃，菜单保留上一次成功字数（现有 `SyncState::replace` 语义，需在端到端验证中确认）。
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn linux_data_dir_prefers_env_override() {
         let env = env_of(&[
-            ("RIME_COUNTER_DATA_DIR", "/custom/data"),
+            ("RIME_TYPE_STATS_DATA_DIR", "/custom/data"),
             ("XDG_DATA_HOME", "/xdg"),
         ]);
         assert_eq!(
@@ -93,7 +93,7 @@ mod tests {
         let env = env_of(&[("XDG_DATA_HOME", "/xdg")]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/xdg/rime-counter")
+            PathBuf::from("/xdg/rime-type-stats")
         );
     }
 
@@ -102,20 +102,20 @@ mod tests {
         let env = env_of(&[]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/home/u/.local/share/rime-counter")
+            PathBuf::from("/home/u/.local/share/rime-type-stats")
         );
     }
 
     #[test]
     fn empty_env_values_are_ignored() {
         let env = env_of(&[
-            ("RIME_COUNTER_DATA_DIR", ""),
+            ("RIME_TYPE_STATS_DATA_DIR", ""),
             ("XDG_DATA_HOME", ""),
-            ("RIME_COUNTER_RIME_DIR", ""),
+            ("RIME_TYPE_STATS_RIME_DIR", ""),
         ]);
         assert_eq!(
             linux_data_dir(&env, Path::new("/home/u")),
-            PathBuf::from("/home/u/.local/share/rime-counter")
+            PathBuf::from("/home/u/.local/share/rime-type-stats")
         );
         assert_eq!(
             linux_rime_dir(&env, Path::new("/home/u"), &exists_in(&[])),
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn linux_rime_dir_prefers_env_override() {
-        let env = env_of(&[("RIME_COUNTER_RIME_DIR", "/custom/stats.userdb")]);
+        let env = env_of(&[("RIME_TYPE_STATS_RIME_DIR", "/custom/stats.userdb")]);
         let exists = exists_in(&["/home/u/.local/share/fcitx5/rime/stats.userdb"]);
         assert_eq!(
             linux_rime_dir(&env, Path::new("/home/u"), &exists),
@@ -184,7 +184,7 @@ mod tests {
         );
         assert_eq!(
             macos_data_dir(&env, Path::new("/Users/u")),
-            PathBuf::from("/Users/u/Library/Application Support/rime-counter")
+            PathBuf::from("/Users/u/Library/Application Support/rime-type-stats")
         );
     }
 }
@@ -204,16 +204,16 @@ Expected: 编译通过但 9 个测试 panic（`unimplemented!`）。
 - `home_dir()`：`std::env::var_os("HOME")` → `PathBuf`，缺失/空时 `.`（沿用 `main.rs` 现有行为）。
 - `fn env_path(env: &dyn Fn(&str) -> Option<OsString>, key: &str) -> Option<PathBuf>`：空值视为未设置。
 - `fn xdg_data_home(env, home) -> PathBuf`：非空 `XDG_DATA_HOME`，否则 `home/.local/share`。
-- `linux_data_dir`：`RIME_COUNTER_DATA_DIR` → `xdg_data_home/rime-counter`。
-- `linux_rime_dir`：`RIME_COUNTER_RIME_DIR` → 依次探测
+- `linux_data_dir`：`RIME_TYPE_STATS_DATA_DIR` → `xdg_data_home/rime-type-stats`。
+- `linux_rime_dir`：`RIME_TYPE_STATS_RIME_DIR` → 依次探测
   1. `xdg_data_home/fcitx5/rime/stats.userdb`
   2. `home/.config/ibus/rime/stats.userdb`
   3. `home/.config/fcitx/rime/stats.userdb`
   4. `home/.config/fcitx5/rime/stats.userdb`
 
   返回第一个 `exists()` 为真的；都没有则返回候选 1。
-- `macos_rime_dir`：`RIME_COUNTER_RIME_DIR` → `home/Library/Rime/stats.userdb`。
-- `macos_data_dir`：`RIME_COUNTER_DATA_DIR` → `home/Library/Application Support/rime-counter`。
+- `macos_rime_dir`：`RIME_TYPE_STATS_RIME_DIR` → `home/Library/Rime/stats.userdb`。
+- `macos_data_dir`：`RIME_TYPE_STATS_DATA_DIR` → `home/Library/Application Support/rime-type-stats`。
 - `rime_dir()` / `data_dir()`：取 `|k| std::env::var_os(k)` 与 `home_dir()`，按 `cfg(target_os)` 调对应纯函数；Linux 的 `exists` 用 `|p: &Path| p.is_dir()`。非 macOS/Linux 平台回退到 Linux 逻辑并加 `#[allow(dead_code)]` 不必要。
 
 - [ ] **Step 4: 运行测试确认通过**
@@ -356,7 +356,7 @@ macOS 的标题与模板图标行为不变。"
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `target/release/rime-counter`
+- Consumes: `target/release/rime-type-stats`
 - Produces: `scripts/install.sh` / `scripts/uninstall.sh` 在 macOS 与 Linux 上均可用
 
 - [ ] **Step 1: 拆出 macOS 脚本**
@@ -392,10 +392,10 @@ esac
 
 ```bash
 #!/usr/bin/env bash
-# 编译、安装并注册 rime-counter 为 systemd 用户服务。
+# 编译、安装并注册 rime-type-stats 为 systemd 用户服务。
 set -euo pipefail
 
-APP_NAME="rime-counter"
+APP_NAME="rime-type-stats"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 INSTALL_DIR="$DATA_HOME/$APP_NAME/bin"
@@ -460,10 +460,10 @@ exit 1
 
 ```bash
 #!/usr/bin/env bash
-# 停止并移除 rime-counter 的 systemd 用户服务与二进制，保留统计数据。
+# 停止并移除 rime-type-stats 的 systemd 用户服务与二进制，保留统计数据。
 set -euo pipefail
 
-APP_NAME="rime-counter"
+APP_NAME="rime-type-stats"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 UNIT="$CONFIG_HOME/systemd/user/$APP_NAME.service"
@@ -493,9 +493,9 @@ echo "==> 数据（events.jsonl）已保留：$DATA_HOME/$APP_NAME"
 - 「安装」拆成 macOS / Linux 两小节：
   - macOS 保持现有说明与 LaunchAgent 细节。
   - Linux 依赖：Arch `gtk3`（编译）+ `libappindicator-gtk3` 或 `libayatana-appindicator`（运行）；Debian/Ubuntu `libgtk-3-dev`（编译）+ `libayatana-appindicator3-1`（运行）。
-  - Linux 安装后：托盘菜单第一项显示今日字数，点开菜单可打开仪表盘；日志用 `journalctl --user -u rime-counter -f`。
-- 「卸载」补充 Linux 命令（`scripts/uninstall.sh`），数据目录 `~/.local/share/rime-counter` 保留。
-- 「开发」环境变量说明补 Linux 默认值：Rime 目录自动探测、数据目录 `~/.local/share/rime-counter`。
+  - Linux 安装后：托盘菜单第一项显示今日字数，点开菜单可打开仪表盘；日志用 `journalctl --user -u rime-type-stats -f`。
+- 「卸载」补充 Linux 命令（`scripts/uninstall.sh`），数据目录 `~/.local/share/rime-type-stats` 保留。
+- 「开发」环境变量说明补 Linux 默认值：Rime 目录自动探测、数据目录 `~/.local/share/rime-type-stats`。
 - 「架构」表加 `src/paths.rs`（跨平台路径解析）。
 - 新增「Linux 托盘差异」一句话：AppIndicator 不支持 macOS 式标题，字数放在菜单第一项。
 
@@ -553,7 +553,7 @@ Expected: JSON 含 `"sync"` 与 `"days"`，`days` 非空。若 8787 被占用，
 Run:
 
 ```bash
-RIME_COUNTER_RIME_DIR=/nonexistent/rime cargo run -- --serve-only &
+RIME_TYPE_STATS_RIME_DIR=/nonexistent/rime cargo run -- --serve-only &
 sleep 3
 curl -s http://127.0.0.1:8787/api/days
 kill %1
@@ -563,17 +563,17 @@ Expected: 进程保持运行，JSON 的 `sync.error` 非空、`days` 为空；�
 
 - [ ] **Step 5: 安装并检查服务**
 
-Run: `scripts/install.sh`，然后 `systemctl --user is-active rime-counter`
-Expected: `active`；`journalctl --user -u rime-counter -n 20` 显示 `rime-counter 已启动：http://127.0.0.1:<port>/`。
+Run: `scripts/install.sh`，然后 `systemctl --user is-active rime-type-stats`
+Expected: `active`；`journalctl --user -u rime-type-stats -n 20` 显示 `rime-type-stats 已启动：http://127.0.0.1:<port>/`。
 
 - [ ] **Step 6: 验证崩溃自动重启**
 
 Run:
 
 ```bash
-kill "$(systemctl --user show -p MainPID --value rime-counter)"
+kill "$(systemctl --user show -p MainPID --value rime-type-stats)"
 sleep 7
-systemctl --user is-active rime-counter
+systemctl --user is-active rime-type-stats
 ```
 
 Expected: 输出 `active`，说明 `Restart=on-failure` 生效。
@@ -584,7 +584,7 @@ Expected: 输出 `active`，说明 `Restart=on-failure` 生效。
 
 - [ ] **Step 8: 验证卸载后数据保留**
 
-Run: `scripts/uninstall.sh && ls "$HOME/.local/share/rime-counter/events.jsonl"`
+Run: `scripts/uninstall.sh && ls "$HOME/.local/share/rime-type-stats/events.jsonl"`
 Expected: 服务与二进制被移除，`events.jsonl` 仍存在。验证完成后重跑 `scripts/install.sh` 恢复常驻。
 
 - [ ] **Step 9: 提交验证记录（可选）**

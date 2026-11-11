@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 编译、安装并注册 rime-counter 为 systemd 用户服务。
+# 编译、安装并注册 rime-type-stats 为 systemd 用户服务。
 set -euo pipefail
 
-APP_NAME="rime-counter"
+APP_NAME="rime-type-stats"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 INSTALL_DIR="$DATA_HOME/$APP_NAME/bin"
