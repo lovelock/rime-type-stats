@@ -122,7 +122,7 @@ pub fn sync_once(rime_dir: &Path, store: &Store) -> SyncOutcome {
         }
     };
 
-    // 当天单独处理：万象的计数会回落，必须以源数据为准，否则菜单栏卡在历史峰值
+    // 当天单独处理：以源数据最后一条为准，历史日期取各字段最大值
     let today = to_iso_day(&chrono::Local::now().format("%Y%m%d").to_string());
 
     for (compact_day, stats) in &scanned {
