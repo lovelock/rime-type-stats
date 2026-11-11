@@ -1,0 +1,167 @@
+name: Release
+
+# 推任意 v* 标签即构建 Apple Silicon DMG 并发布到同名 GitHub Release。
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# 版本号取标签去掉前缀 v（v0.1.0-beta.1 → 0.1.0-beta.1）。含 `-` 的版本按
+# 预发布处理，不会顶掉仓库的 Latest。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "手动构建的版本号（不含 v 前缀）"
+        required: true
+        default: "0.0.0-dev"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# 全程只读；只有发布那一步临时提权，第三方 action 拿不到写权限。
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_NAME: rime-type-stats
+  EXECUTABLE: rime-type-stats
+
+jobs:
+  build-dmg:
+    name: build aarch64 DMG
+    # macos-15 为 Apple Silicon runner；本项目只在 arm64 上构建。
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 让 scripts/bundle.sh 的 git describe 能拿到标签
+          fetch-depth: 0
+
+      - name: 确认 runner 架构
+        run: |
+          uname -m
+          test "$(uname -m)" = arm64
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # 标签名与手动输入都是外部数据，一律经 env 传入，绝不内联到脚本里。
+      - name: 计算版本号
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${REF_NAME#v}"
+          fi
+          # 非法字符会被 hdiutil / plist 拒绝
+          case "$version" in
+            ""|*[!0-9A-Za-z.+-]*)
+              echo "!! 非法版本号：$version" >&2
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "版本号：$version"
+
+      - name: 单元测试
+        run: cargo test --locked
+
+      - name: 打包 DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/bundle.sh "$VERSION"
+
+      - name: 校验产物
+        run: |
+          shopt -s nullglob
+          dmgs=(dist/*.dmg)
+          test ${#dmgs[@]} -eq 1 || {
+            echo "期望恰好一个 DMG，实际：${dmgs[*]:-<无>}" >&2
+            exit 1
+          }
+          dmg="${dmgs[0]}"
+          echo "产物：$dmg"
+          mount=$(mktemp -d)
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount" >/dev/null
+          trap 'hdiutil detach "$mount" >/dev/null || true' EXIT
+          codesign --verify --deep --strict "$mount/$APP_NAME.app"
+          lipo -archs "$mount/$APP_NAME.app/Contents/MacOS/$EXECUTABLE" | grep -qx arm64
+          echo "DMG 校验通过"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dmg-aarch64-${{ steps.version.outputs.version }}
+          path: dist/*.dmg
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  # 发布单独起作业：构建阶段的第三方 action 全程只有只读权限。
+  publish:
+    name: publish release
+    needs: build-dmg
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: 计算版本号
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="${REF_NAME#v}"
+          case "$version" in
+            ""|*[!0-9A-Za-z.+-]*)
+              echo "!! 非法版本号：$version" >&2
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dmg-aarch64-${{ steps.version.outputs.version }}
+          path: dist
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          shopt -s nullglob
+          files=(dist/*.dmg)
+          test ${#files[@]} -gt 0 || { echo "没有可发布的 DMG" >&2; exit 1; }
+
+          # 含 `-` 的版本（0.1.0-beta.1）按预发布处理
+          pre=(--prerelease=false)
+          case "$VERSION" in
+            *-*) pre=(--prerelease) ;;
+          esac
+          echo "版本 $VERSION，预发布参数：${pre[*]}"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 上一次可能停在「草稿已建、资产传了一半」的状态：这里既补齐资产，
+            # 也显式取消草稿，否则重跑后会留下用户看不见的草稿。
+            echo "Release $tag 已存在，覆盖资产并确保已发布"
+            gh release upload "$tag" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --draft=false "${pre[@]}" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Rime Type Stats $VERSION" \
+              --generate-notes \
+              --verify-tag \
+              "${pre[@]}"
+          fi

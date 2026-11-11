@@ -1,13 +1,13 @@
-//! rime-counter：统计 Rime 每日打字字数，提供菜单栏入口与本地仪表盘。
+//! rime-type-stats：统计 Rime 每日打字字数，提供菜单栏入口与本地仪表盘。
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use rime_counter::server::{bind_first_available, serve};
-use rime_counter::store::Store;
-use rime_counter::sync::{sync_once, to_iso_day, SyncState};
-use rime_counter::tray;
+use rime_type_stats::server::{bind_first_available, serve};
+use rime_type_stats::store::Store;
+use rime_type_stats::sync::{sync_once, to_iso_day, SyncState};
+use rime_type_stats::tray;
 
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -16,18 +16,26 @@ fn home_dir() -> PathBuf {
 }
 
 fn rime_dir() -> PathBuf {
-    std::env::var_os("RIME_COUNTER_RIME_DIR")
+    std::env::var_os("RIME_TYPE_STATS_RIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| home_dir().join("Library/Rime/stats.userdb"))
 }
 
 fn data_dir() -> PathBuf {
-    std::env::var_os("RIME_COUNTER_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home_dir().join("Library/Application Support/rime-counter"))
+    if let Some(dir) = std::env::var_os("RIME_TYPE_STATS_DATA_DIR") {
+        return PathBuf::from(dir);
+    }
+    let base = home_dir().join("Library/Application Support");
+    let current = base.join("rime-type-stats");
+    // 0.1.0 之前的版本把数据目录叫 rime-counter，首次升级时搬过来，
+    // 否则历史字数会看起来消失了。
+    if let Err(e) = rime_type_stats::store::migrate_dir(&base.join("rime-counter"), &current) {
+        eprintln!("旧数据目录未能迁移到 {}：{e}", current.display());
+    }
+    current
 }
 
-fn print_days(days: &std::collections::BTreeMap<String, rime_counter::rime::parser::DayStats>) {
+fn print_days(days: &std::collections::BTreeMap<String, rime_type_stats::rime::parser::DayStats>) {
     println!("共 {} 天有记录", days.len());
     let mut total = 0u64;
     for (day, stats) in days {
@@ -49,7 +57,7 @@ fn main() {
     let rime_dir = rime_dir();
 
     if dump {
-        match rime_counter::rime::parser::read_dir(&rime_dir) {
+        match rime_type_stats::rime::parser::read_dir(&rime_dir) {
             Ok(raw) => {
                 // 紧凑日期转 ISO 便于阅读
                 let converted: std::collections::BTreeMap<_, _> = raw
@@ -92,7 +100,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    println!("rime-counter 已启动：http://127.0.0.1:{port}/");
+    println!("rime-type-stats 已启动：http://127.0.0.1:{port}/");
 
     let shutdown = Arc::new(AtomicBool::new(false));
     {

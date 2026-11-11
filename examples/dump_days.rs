@@ -1,6 +1,6 @@
 //! 用真实 Rime 统计库做冒烟检查：解析 `~/Library/Rime/stats.userdb` 并打印按天统计。
 
-use rime_counter::rime::parser;
+use rime_type_stats::rime::parser;
 
 fn main() {
     let home = std::env::var("HOME").expect("HOME 未设置");

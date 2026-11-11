@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# 编译、安装并注册 rime-counter 为登录自启的菜单栏应用。
+# 编译、安装并注册 rime-type-stats 为登录自启的菜单栏应用。
 set -euo pipefail
 
-APP_NAME="rime-counter"
-BUNDLE_ID="com.lovelock.rime-counter"
+APP_NAME="rime-type-stats"
+BUNDLE_ID="com.lovelock.rime-type-stats"
+# 旧版本的 LaunchAgent 标签，安装时一并清掉，否则同一时刻会跑两个实例
+LEGACY_BUNDLE_ID="com.lovelock.rime-counter"
 INSTALL_DIR="$HOME/Library/Application Support/$APP_NAME/bin"
 BIN="$INSTALL_DIR/$APP_NAME"
 PLIST="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
 LOG="$HOME/Library/Logs/$APP_NAME.log"
 
 cd "$(dirname "$0")/.."
+
+echo "==> 清理旧版 LaunchAgent（$LEGACY_BUNDLE_ID）"
+launchctl bootout "gui/$(id -u)/$LEGACY_BUNDLE_ID" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/$LEGACY_BUNDLE_ID.plist"
 
 echo "==> 编译 release 版本"
 cargo build --release

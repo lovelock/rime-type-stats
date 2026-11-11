@@ -8,8 +8,8 @@
 
 use std::collections::BTreeMap;
 
-use rime_counter::rime::sstable::parse_table;
-use rime_counter::rime::wal::{parse_log, BatchOp};
+use rime_type_stats::rime::sstable::parse_table;
+use rime_type_stats::rime::wal::{parse_log, BatchOp};
 
 fn main() {
     let day = std::env::args()

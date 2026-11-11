@@ -1,4 +1,4 @@
-# rime-counter 设计文档
+# rime-type-stats 设计文档
 
 日期：2026-11-06
 状态：已确认，待实现
@@ -24,10 +24,10 @@
 
 ## 3. 存储位置与数据格式
 
-数据目录：`~/Library/Application Support/rime-counter/`
+数据目录：`~/Library/Application Support/rime-type-stats/`
 
 ```
-rime-counter/
+rime-type-stats/
 ├── events.jsonl       # 追加日志（唯一数据源）
 └── meta.json          # { "last_sync_unix": 1234567890, "last_error": null }
 ```
@@ -179,8 +179,8 @@ type: 1=FULL, 2=FIRST, 3=MIDDLE, 4=LAST
 
 - `cargo build --release` 产物单文件，无运行时依赖。
 - `scripts/install.sh`：
-  1. 复制二进制到 `~/Library/Application Support/rime-counter/bin/rime-counter`。
-  2. 写 `~/Library/LaunchAgents/com.lovelock.rime-counter.plist`（`RunAtLoad` + `KeepAlive`）。
+  1. 复制二进制到 `~/Library/Application Support/rime-type-stats/bin/rime-type-stats`。
+  2. 写 `~/Library/LaunchAgents/com.lovelock.rime-type-stats.plist`（`RunAtLoad` + `KeepAlive`）。
   3. `launchctl bootstrap gui/$(id -u)` 加载。
 - `scripts/uninstall.sh` 逆向清理（保留数据目录）。
 

@@ -1,4 +1,4 @@
-# rime-counter Implementation Plan
+# rime-type-stats Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -56,7 +56,7 @@
 **Interfaces:**
 - Consumes: 无
 - Produces:
-  - `rime_counter::util::read_varint(buf: &[u8], pos: &mut usize) -> Option<u64>` — 从 `buf[*pos..]` 读一个 LEB128 无符号整数，成功时推进 `*pos`，越界或过长返回 `None`。
+  - `rime_type_stats::util::read_varint(buf: &[u8], pos: &mut usize) -> Option<u64>` — 从 `buf[*pos..]` 读一个 LEB128 无符号整数，成功时推进 `*pos`，越界或过长返回 `None`。
 
 - [ ] **Step 1: 创建 crate 骨架**
 
@@ -64,16 +64,16 @@
 
 ```toml
 [package]
-name = "rime-counter"
+name = "rime-type-stats"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "rime_counter"
+name = "rime_type_stats"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rime-counter"
+name = "rime-type-stats"
 path = "src/main.rs"
 
 [dependencies]
@@ -95,7 +95,7 @@ pub mod util;
 
 ```rust
 fn main() {
-    println!("rime-counter 启动中");
+    println!("rime-type-stats 启动中");
 }
 ```
 
@@ -114,7 +114,7 @@ pub fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
 创建 `tests/varint.rs`：
 
 ```rust
-use rime_counter::util::read_varint;
+use rime_type_stats::util::read_varint;
 
 #[test]
 fn decodes_single_byte() {
@@ -238,7 +238,7 @@ git commit -m "feat: 搭建 crate 骨架并实现 LEB128 varint 解码"
 - Test: `src/rime/sstable.rs`（内联 `#[cfg(test)]`）
 
 **Interfaces:**
-- Consumes: `rime_counter::util::read_varint`
+- Consumes: `rime_type_stats::util::read_varint`
 - Produces:
   - `pub struct TableEntry { pub key: Vec<u8>, pub value: Vec<u8> }`
   - `pub fn parse_table(bytes: &[u8]) -> Result<Vec<TableEntry>, TableError>` — 解析整个 SSTable，返回全部条目（按 key 升序）。
@@ -588,7 +588,7 @@ git commit -m "feat(rime): 实现 SSTable 只读解析"
 - Test: `src/rime/wal.rs`（内联 `#[cfg(test)]`）
 
 **Interfaces:**
-- Consumes: `rime_counter::util::read_varint`
+- Consumes: `rime_type_stats::util::read_varint`
 - Produces:
   - `pub struct BatchRecord { pub seq: u64, pub ops: Vec<BatchOp> }`
   - `pub enum BatchOp { Put { key: Vec<u8>, value: Vec<u8> }, Delete { key: Vec<u8> } }`
@@ -1318,7 +1318,7 @@ cargo run --quiet --example dump_days 2>/dev/null || true
 创建 `examples/dump_days.rs`：
 
 ```rust
-use rime_counter::rime::parser;
+use rime_type_stats::rime::parser;
 
 fn main() {
     let home = std::env::var("HOME").expect("HOME 未设置");
@@ -1387,7 +1387,7 @@ mod tests {
     }
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("rime-counter-test-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("rime-type-stats-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1649,7 +1649,7 @@ mod tests {
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir()
-            .join(format!("rime-counter-sync-{name}-{}", std::process::id()));
+            .join(format!("rime-type-stats-sync-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -3122,10 +3122,10 @@ git commit -m "feat(web): 实现深色优先的打字统计仪表盘"
 
 **Interfaces:**
 - Consumes: `store::Store`, `sync::{sync_once, SyncState}`, `server::{bind_first_available, serve}`, `tray::run_app`
-- Produces: 可执行二进制 `rime-counter`
+- Produces: 可执行二进制 `rime-type-stats`
 
 **行为**：
-- 默认路径：Rime 目录 `~/Library/Rime`，数据目录 `~/Library/Application Support/rime-counter`；均可由环境变量 `RIME_COUNTER_RIME_DIR` / `RIME_COUNTER_DATA_DIR` 覆盖（测试与排障用）。
+- 默认路径：Rime 目录 `~/Library/Rime`，数据目录 `~/Library/Application Support/rime-type-stats`；均可由环境变量 `RIME_TYPE_STATS_RIME_DIR` / `RIME_TYPE_STATS_DATA_DIR` 覆盖（测试与排障用）。
 - 启动顺序：加载已存数据 → 起 HTTP 线程（端口 8787 起自动寻址）→ 菜单栏事件循环占用主线程。
 - `--serve-only` 参数：只起 HTTP，不进事件循环，便于调试与自动化验证。
 - `--dump` 参数：打印聚合结果后退出。
@@ -3135,16 +3135,16 @@ git commit -m "feat(web): 实现深色优先的打字统计仪表盘"
 写 `src/main.rs`：
 
 ```rust
-//! rime-counter：统计 Rime 每日打字字数，提供菜单栏入口与本地仪表盘。
+//! rime-type-stats：统计 Rime 每日打字字数，提供菜单栏入口与本地仪表盘。
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use rime_counter::server::{bind_first_available, serve};
-use rime_counter::store::Store;
-use rime_counter::sync::{sync_once, to_iso_day, SyncState};
-use rime_counter::tray;
+use rime_type_stats::server::{bind_first_available, serve};
+use rime_type_stats::store::Store;
+use rime_type_stats::sync::{sync_once, to_iso_day, SyncState};
+use rime_type_stats::tray;
 
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -3153,20 +3153,20 @@ fn home_dir() -> PathBuf {
 }
 
 fn rime_dir() -> PathBuf {
-    std::env::var_os("RIME_COUNTER_RIME_DIR")
+    std::env::var_os("RIME_TYPE_STATS_RIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| home_dir().join("Library/Rime"))
 }
 
 fn data_dir() -> PathBuf {
-    std::env::var_os("RIME_COUNTER_DATA_DIR")
+    std::env::var_os("RIME_TYPE_STATS_DATA_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            home_dir().join("Library/Application Support/rime-counter")
+            home_dir().join("Library/Application Support/rime-type-stats")
         })
 }
 
-fn print_days(days: &std::collections::BTreeMap<String, rime_counter::rime::parser::DayStats>) {
+fn print_days(days: &std::collections::BTreeMap<String, rime_type_stats::rime::parser::DayStats>) {
     println!("共 {} 天有记录", days.len());
     let mut total = 0u64;
     for (day, stats) in days {
@@ -3188,7 +3188,7 @@ fn main() {
     let rime_dir = rime_dir();
 
     if dump {
-        match rime_counter::rime::parser::read_dir(&rime_dir) {
+        match rime_type_stats::rime::parser::read_dir(&rime_dir) {
             Ok(raw) => {
                 // 紧凑日期转 ISO 便于阅读
                 let converted: std::collections::BTreeMap<_, _> = raw
@@ -3231,7 +3231,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    println!("rime-counter 已启动：http://127.0.0.1:{port}/");
+    println!("rime-type-stats 已启动：http://127.0.0.1:{port}/");
 
     let shutdown = Arc::new(AtomicBool::new(false));
     {
@@ -3270,12 +3270,12 @@ pub mod util;
 Run: `cargo build --release`
 Expected: 编译通过
 
-Run: `./target/release/rime-counter --dump | head -12`
+Run: `./target/release/rime-type-stats --dump | head -12`
 Expected: 打印 `共 N 天有记录` 与逐日明细，**首行日期应早于今天且字数非零**；把 N 记下来用于验收。
 
 - [ ] **Step 3: 用 serve-only 验证 API 与页面**
 
-Run（后台）: `RIME_COUNTER_DATA_DIR=/tmp/rime-counter-e2e ./target/release/rime-counter --serve-only &`
+Run（后台）: `RIME_TYPE_STATS_DATA_DIR=/tmp/rime-type-stats-e2e ./target/release/rime-type-stats --serve-only &`
 Run: `sleep 2 && curl -s http://127.0.0.1:8787/api/days | head -c 300`
 Expected: JSON 非空，`days` 数组长度与 Step 2 的 N 一致
 
@@ -3286,7 +3286,7 @@ Expected: 返回 HTML（含 `<!DOCTYPE html>`）
 
 - [ ] **Step 4: 手动验证菜单栏**
 
-Run: `./target/release/rime-counter`
+Run: `./target/release/rime-type-stats`
 Expected:
 - 菜单栏出现 ⌨ 图标与今日字数，**Dock 中没有图标**
 - 左键点击打开浏览器到统计页
@@ -3303,9 +3303,9 @@ Expected:
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="rime-counter"
-BUNDLE_ID="com.lovelock.rime-counter"
-INSTALL_DIR="$HOME/Library/Application Support/rime-counter/bin"
+APP_NAME="rime-type-stats"
+BUNDLE_ID="com.lovelock.rime-type-stats"
+INSTALL_DIR="$HOME/Library/Application Support/rime-type-stats/bin"
 BIN="$INSTALL_DIR/$APP_NAME"
 PLIST="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
 
@@ -3356,10 +3356,10 @@ echo "    卸载：scripts/uninstall.sh"
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="rime-counter"
-BUNDLE_ID="com.lovelock.rime-counter"
+APP_NAME="rime-type-stats"
+BUNDLE_ID="com.lovelock.rime-type-stats"
 PLIST="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
-BIN_DIR="$HOME/Library/Application Support/rime-counter/bin"
+BIN_DIR="$HOME/Library/Application Support/rime-type-stats/bin"
 
 if [[ -f "$PLIST" ]]; then
   echo "==> 停止并移除 LaunchAgent"
@@ -3370,7 +3370,7 @@ fi
 echo "==> 删除二进制：$BIN_DIR"
 rm -rf "$BIN_DIR"
 
-echo "==> 数据（events.jsonl）已保留：$HOME/Library/Application Support/rime-counter"
+echo "==> 数据（events.jsonl）已保留：$HOME/Library/Application Support/rime-type-stats"
 ```
 
 - [ ] **Step 6: 赋予执行权限并验证脚本语法**
@@ -3417,7 +3417,7 @@ Expected: 输出 `无占位符`
 创建 `README.md`：
 
 ```markdown
-# rime-counter
+# rime-type-stats
 
 统计每天在 macOS（Squirrel）上用 Rime 打出的字数，菜单栏常驻显示今日字数，点开查看日 / 周 / 月趋势。
 
@@ -3428,7 +3428,7 @@ Expected: 输出 `无占位符`
 数据来自万象输入法的 `input_statistics` 模块，历史数据从启用那天起自动补齐。
 
 本地只保存一份追加式日志 `events.jsonl`（在
-`~/Library/Application Support/rime-counter/`），折叠时按天取最大值，重复同步幂等。
+`~/Library/Application Support/rime-type-stats/`），折叠时按天取最大值，重复同步幂等。
 
 ## 安装
 
@@ -3444,7 +3444,7 @@ scripts/install.sh
 scripts/uninstall.sh
 ```
 
-数据目录会保留，如需彻底清除手动删除 `~/Library/Application Support/rime-counter`。
+数据目录会保留，如需彻底清除手动删除 `~/Library/Application Support/rime-type-stats`。
 
 ## 开发
 
@@ -3454,7 +3454,7 @@ cargo run -- --dump            # 打印解析到的每日数据
 cargo run -- --serve-only      # 只起 HTTP 服务，便于调试前端
 ```
 
-环境变量 `RIME_COUNTER_RIME_DIR` 与 `RIME_COUNTER_DATA_DIR` 可覆盖默认路径。
+环境变量 `RIME_TYPE_STATS_RIME_DIR` 与 `RIME_TYPE_STATS_DATA_DIR` 可覆盖默认路径。
 
 ## 前提
 

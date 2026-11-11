@@ -1,4 +1,4 @@
-# rime-counter
+# rime-type-stats
 
 统计每天在 macOS（Squirrel）上用 Rime 打出的字数。菜单栏常驻显示今日字数，点开查看日 / 周 / 月趋势曲线。
 
@@ -10,24 +10,60 @@
 - 不需要复制快照、不加文件锁、不修改任何 Rime 配置
 - 内置纯 Rust 的 SSTable 与 WAL 解析器，无第三方压缩依赖
 
-数据来自万象输入法的 `input_statistics` 模块，因此**历史数据从启用那天起自动补齐**，无需等待累积。
+### 这个库是万象来维护的
 
-本地只在 `~/Library/Application Support/rime-counter/` 保存一份追加式日志 `events.jsonl`。
+`stats.userdb` 由 [万象拼音](https://github.com/amzxyz/rime-wanxiang) 的
+`input_statistics` 模块创建和写入，本项目只是它的**只读消费者**：
+
+| 项 | 值 | 出处 |
+|---|---|---|
+| 模块 | `lua/wanxiang/input_statistics.lua` | [源码](https://github.com/amzxyz/rime-wanxiang/blob/wanxiang/lua/wanxiang/input_statistics.lua) |
+| 底层封装 | `lua/wanxiang/userdb.lua`（LevelDb 包装 + 弱引用池） | [源码](https://github.com/amzxyz/rime-wanxiang/blob/wanxiang/lua/wanxiang/userdb.lua) |
+| 库名 | 配置项 `input_stats/db_name`，默认 `stats` → `stats.userdb` | `input_statistics.lua` 中 `env.stats_db_name` |
+| key 形态 | `statistics/day/YYYYMMDD/<field> \t <8 位 device_id>` | 本仓库 `src/rime/parser.rs` |
+| 字段 | `text/characters`、`text/code_keystrokes`、`speed_average/characters`、`speed_average/milliseconds`、`commit_length/1..5_plus` | `input_statistics.lua` 的字段映射表 |
+| value 形态 | `c=<累计值> d=0 t=0` | 同上 |
+
+因为数据源在万象侧，**历史数据从启用那天起自动补齐**，无需等待本工具累积；
+同时万象改字段名或改统计算法时，本工具也会跟着失效（见「已知限制」）。
+
+本地只在 `~/Library/Application Support/rime-type-stats/` 保存一份追加式日志 `events.jsonl`。
 折叠时历史日期对每个字段取最大值，因此重复同步、乱序同步、进程重启后重放都收敛到相同结果（幂等）。
 当天例外：万象的当日计数会在 Rime 重建统计库时回落，所以当天以最后一条记录为准。
 
 ## 安装
 
+### 从 DMG 安装（推荐）
+
+从 [Releases](https://github.com/lovelock/rime-type-stats/releases) 下载
+`rime-type-stats_<版本>_arm64.dmg`，打开后把 **Rime Type Stats** 拖进「应用程序」。
+
+只支持 Apple Silicon（arm64）。
+
+应用做了 ad-hoc 签名（没有 Developer ID），首次打开会被 Gatekeeper 拦下。
+任选其一放行：
+
+- 在「应用程序」里右键点图标 →「打开」→ 确认打开
+- 或打开后在「系统设置 → 隐私与安全性」里点「仍要打开」
+
+首次放行后不再提示。
+
+登录自启：打开「系统设置 → 通用 → 登录项」，点「+」添加
+「应用程序」里的 Rime Type Stats。
+
+### 从源码安装
+
 ```bash
-git clone <repo> && cd rime-counter
+git clone https://github.com/lovelock/rime-type-stats && cd rime-type-stats
 scripts/install.sh
 ```
 
 安装脚本会编译 release、安装到
-`~/Library/Application Support/rime-counter/bin/`、做 ad-hoc 签名，并写入
-`~/Library/LaunchAgents/com.lovelock.rime-counter.plist` 注册登录自启。
+`~/Library/Application Support/rime-type-stats/bin/`、做 ad-hoc 签名，并写入
+`~/Library/LaunchAgents/com.lovelock.rime-type-stats.plist` 注册登录自启（若存在旧版的
+`com.lovelock.rime-counter.plist`，脚本会先卸载并删除它）。
 
-安装后：
+安装后（两种方式相同）：
 
 - 菜单栏出现 ⌨ 图标与今日字数
 - 左键点击打开仪表盘网页
@@ -35,13 +71,47 @@ scripts/install.sh
 
 重新部署（改完代码后）直接重跑 `scripts/install.sh` 即可，它会先卸载旧的 LaunchAgent。
 
+## 发布
+
+推送 `v*` 标签即自动构建 DMG 并创建 GitHub Release：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+版本号取标签去掉 `v`，写入 `Info.plist` 的 `CFBundleShortVersionString`。
+构建在 `macos-15`（Apple Silicon）runner 上完成，`scripts/bundle.sh` 会断言
+`uname -m == arm64`，避免产出 x86 包。
+
+本地复现同一条打包流程：
+
+```bash
+scripts/bundle.sh 0.1.0   # 产物：dist/rime-type-stats_0.1.0_arm64.dmg
+```
+
+应用图标 `assets/AppIcon.icns` 由 `scripts/gen_icns.py` 生成（只依赖 Python
+标准库 + `iconutil`），改图形后重跑即可，产物需提交。
+
+`main` 分支的每次推送与 PR 会跑 `.github/workflows/ci.yml`：`cargo fmt --check`、
+`cargo clippy -D warnings`、`cargo test`。
+
 ## 卸载
 
 ```bash
 scripts/uninstall.sh
 ```
 
-数据目录会保留。如需彻底清除，手动删除 `~/Library/Application Support/rime-counter`。
+数据目录会保留。如需彻底清除，手动删除 `~/Library/Application Support/rime-type-stats`。
+
+## 从旧版本升级
+
+0.1.0 之前的版本叫 `rime-counter`，二进制、LaunchAgent 标签与数据目录都用这个名字。
+新版本首次启动会自动把 `~/Library/Application Support/rime-counter/` 整体改名到
+`rime-type-stats/`，历史字数不会丢；源码安装时 `scripts/install.sh` 也会先卸载旧的
+`com.lovelock.rime-counter` LaunchAgent。
+
+本工具读取的 `stats.userdb` 由万象维护，与本工具的改名无关，不需要任何迁移。
 
 ## 资源占用
 
@@ -58,7 +128,7 @@ CPU 占用有一条容易踩的坑：AppKit 的 `setTitle` 即使文本没有变
 ## 开发
 
 ```bash
-cargo test                     # 单元测试（51 个）
+cargo test                     # 单元测试（54 个）
 cargo run -- --dump            # 打印解析到的每日数据
 cargo run -- --serve-only      # 只起 HTTP 服务，便于调试前端
 cargo run                      # 完整模式（菜单栏 + 网页）
@@ -66,8 +136,8 @@ cargo run                      # 完整模式（菜单栏 + 网页）
 
 环境变量可覆盖默认路径：
 
-- `RIME_COUNTER_RIME_DIR` — Rime 统计库目录，默认 `~/Library/Rime/stats.userdb`（注意是子目录，`read_dir` 只扫描一层）
-- `RIME_COUNTER_DATA_DIR` — 数据目录，默认 `~/Library/Application Support/rime-counter`
+- `RIME_TYPE_STATS_RIME_DIR` — Rime 统计库目录，默认 `~/Library/Rime/stats.userdb`（注意是子目录，`read_dir` 只扫描一层）
+- `RIME_TYPE_STATS_DATA_DIR` — 数据目录，默认 `~/Library/Application Support/rime-type-stats`
 
 ## 仪表盘
 
@@ -82,13 +152,19 @@ cargo run                      # 完整模式（菜单栏 + 网页）
 
 ## 前提
 
-`~/Library/Rime` 下已启用万象的 `input_statistics`，即 `wanxiang_pro.schema.yaml` 中包含：
+安装并启用 [万象拼音](https://github.com/amzxyz/rime-wanxiang)，且其
+`input_statistics` 模块处于开启状态。以万象 Pro 版为例，`wanxiang_pro.schema.yaml`
+的 `engine/translators` 中应包含：
 
 ```yaml
 lua_translator@*wanxiang.input_statistics
 ```
 
-未启用时没有统计数据可读。
+模块会在 `~/Library/Rime/` 下创建 `stats.userdb`。库名取自万象配置项
+`input_stats/db_name`，默认 `stats`；若你改过这一项，需要同步设置本工具的
+`RIME_TYPE_STATS_RIME_DIR`。
+
+未启用时没有统计数据可读。万象的 Base / Pro 版本内置该模块，Lite / Pure 版本不含 Lua。
 
 ## 已知限制
 

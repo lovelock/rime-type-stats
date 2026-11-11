@@ -1,14 +1,14 @@
 [package]
-name = "rime-counter"
+name = "rime-type-stats"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "rime_counter"
+name = "rime_type_stats"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rime-counter"
+name = "rime-type-stats"
 path = "src/main.rs"
 
 [dependencies]

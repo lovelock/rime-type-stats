@@ -1,4 +1,13 @@
 //! 内部 key 解析与按天聚合。
+//!
+//! key 与 value 的形状由万象拼音（<https://github.com/amzxyz/rime-wanxiang>）的
+//! `lua/wanxiang/input_statistics.lua` 定义，本模块是只读消费者：
+//!
+//! ```text
+//! statistics/day/YYYYMMDD/<field> \t <8 位 device_id>   ->   c=<累计值> d=0 t=0
+//! ```
+//!
+//! 万象改名或改统计算法时，`PREFIX` / `classify` 需要同步跟随。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -39,6 +48,7 @@ impl std::fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
+/// 万象 `input_statistics.lua` 的 `DAY_PREFIX`。
 const PREFIX: &[u8] = b"statistics/day/";
 /// 尾部 8 字节：seq(7) + type(1)
 const KEY_TRAILER: usize = 8;
@@ -95,6 +105,8 @@ fn parse_key_body(user_key: &[u8]) -> Option<(&str, &[u8])> {
 }
 
 /// 把字段名映射为统计类别；未知字段返回 None。
+///
+/// 字段名取自万象 `input_statistics.lua` 的 `DAY_FIELDS` 与 `commit_length` 分桶。
 fn classify(field: &[u8]) -> Option<RawField> {
     match field {
         b"text/characters" => Some(RawField::Characters),

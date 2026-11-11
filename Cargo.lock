@@ -1528,7 +1528,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rime-counter"
+name = "rime-type-stats"
 version = "0.1.0"
 dependencies = [
  "chrono",

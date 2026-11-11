@@ -1,4 +1,4 @@
-use rime_counter::util::read_varint;
+use rime_type_stats::util::read_varint;
 
 #[test]
 fn decodes_single_byte() {
