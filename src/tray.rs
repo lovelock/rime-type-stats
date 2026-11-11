@@ -57,6 +57,19 @@ fn today_chars(state: &SyncState) -> u64 {
     state.characters_on(&today)
 }
 
+/// 运行一次同步，成功后通知 UI 刷新显示。
+fn sync_and_notify(
+    rime_dir: &Path,
+    data_dir: &Path,
+    state: &SyncState,
+    notify: impl Fn(),
+) {
+    if let Ok(store) = Store::open(data_dir) {
+        state.replace(sync_once(rime_dir, &store));
+        notify();
+    }
+}
+
 /// 运行托盘应用，永不返回。
 pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16) -> ! {
     #[cfg(target_os = "macos")]
@@ -75,14 +88,11 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
         let rime_dir = rime_dir.clone();
         let data_dir = data_dir.clone();
         std::thread::spawn(move || {
-            let Ok(store) = Store::open(&data_dir) else {
-                return;
-            };
             loop {
                 std::thread::sleep(SYNC_INTERVAL);
-                let outcome = sync_once(&rime_dir, &store);
-                state.replace(outcome);
-                let _ = proxy.send_event(UserEvent::Synced);
+                sync_and_notify(&rime_dir, &data_dir, &state, || {
+                    let _ = proxy.send_event(UserEvent::Synced);
+                });
             }
         });
     }
@@ -147,6 +157,9 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                     let icon = builder.build();
                     if let Err(err) = &icon {
                         eprintln!("创建托盘图标失败：{err}");
+                        // Linux 上没有托盘就没有入口，退出让 systemd 按 Restart 策略重试。
+                        #[cfg(not(target_os = "macos"))]
+                        std::process::exit(1);
                     }
 
                     if let Ok(icon) = icon {
@@ -191,10 +204,11 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
                         let rime_dir = rime_dir.clone();
                         let data_dir = data_dir.clone();
                         let state = state.clone();
+                        let proxy = proxy.clone();
                         std::thread::spawn(move || {
-                            if let Ok(store) = Store::open(&data_dir) {
-                                state.replace(sync_once(&rime_dir, &store));
-                            }
+                            sync_and_notify(&rime_dir, &data_dir, &state, || {
+                                let _ = proxy.send_event(UserEvent::Synced);
+                            });
                         });
                     } else if Some(&id) == menu_data_dir.as_ref().map(|m| m.id()) {
                         open_data_dir(&data_dir);
@@ -228,4 +242,33 @@ pub fn run_app(rime_dir: PathBuf, data_dir: PathBuf, state: SyncState, port: u16
             _ => {}
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_and_notify_calls_notifier_after_successful_sync() {
+        let dir = std::env::temp_dir().join(format!(
+            "rime-counter-tray-sync-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let state = SyncState::new(Default::default());
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+
+        sync_and_notify(&dir, &dir, &state, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "同步成功后应通知 UI 刷新"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

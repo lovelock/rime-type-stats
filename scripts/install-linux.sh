@@ -35,7 +35,7 @@ After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
-ExecStart=$BIN
+ExecStart="$BIN"
 Restart=on-failure
 RestartSec=5
 
