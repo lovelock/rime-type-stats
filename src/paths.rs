@@ -29,7 +29,7 @@ pub fn rime_dir() -> PathBuf {
     let home = home_dir();
     #[cfg(target_os = "macos")]
     {
-        return macos_rime_dir(&env, &home);
+        macos_rime_dir(&env, &home)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -43,7 +43,7 @@ pub fn data_dir() -> PathBuf {
     let home = home_dir();
     #[cfg(target_os = "macos")]
     {
-        return macos_data_dir(&env, &home);
+        macos_data_dir(&env, &home)
     }
     #[cfg(not(target_os = "macos"))]
     {
