@@ -22,17 +22,9 @@ fn rime_dir() -> PathBuf {
 }
 
 fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("RIME_TYPE_STATS_DATA_DIR") {
-        return PathBuf::from(dir);
-    }
-    let base = home_dir().join("Library/Application Support");
-    let current = base.join("rime-type-stats");
-    // 0.1.0 之前的版本把数据目录叫 rime-counter，首次升级时搬过来，
-    // 否则历史字数会看起来消失了。
-    if let Err(e) = rime_type_stats::store::migrate_dir(&base.join("rime-counter"), &current) {
-        eprintln!("旧数据目录未能迁移到 {}：{e}", current.display());
-    }
-    current
+    std::env::var_os("RIME_TYPE_STATS_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join("Library/Application Support/rime-type-stats"))
 }
 
 fn print_days(days: &std::collections::BTreeMap<String, rime_type_stats::rime::parser::DayStats>) {

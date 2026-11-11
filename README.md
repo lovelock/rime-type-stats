@@ -60,8 +60,7 @@ scripts/install.sh
 
 安装脚本会编译 release、安装到
 `~/Library/Application Support/rime-type-stats/bin/`、做 ad-hoc 签名，并写入
-`~/Library/LaunchAgents/com.lovelock.rime-type-stats.plist` 注册登录自启（若存在旧版的
-`com.lovelock.rime-counter.plist`，脚本会先卸载并删除它）。
+`~/Library/LaunchAgents/com.lovelock.rime-type-stats.plist` 注册登录自启。
 
 安装后（两种方式相同）：
 
@@ -104,15 +103,6 @@ scripts/uninstall.sh
 
 数据目录会保留。如需彻底清除，手动删除 `~/Library/Application Support/rime-type-stats`。
 
-## 从旧版本升级
-
-0.1.0 之前的版本叫 `rime-counter`，二进制、LaunchAgent 标签与数据目录都用这个名字。
-新版本首次启动会自动把 `~/Library/Application Support/rime-counter/` 整体改名到
-`rime-type-stats/`，历史字数不会丢；源码安装时 `scripts/install.sh` 也会先卸载旧的
-`com.lovelock.rime-counter` LaunchAgent。
-
-本工具读取的 `stats.userdb` 由万象维护，与本工具的改名无关，不需要任何迁移。
-
 ## 资源占用
 
 菜单栏常驻进程实测：**CPU 0.0%、4 个线程、phys_footprint 17MB**。
@@ -128,7 +118,7 @@ CPU 占用有一条容易踩的坑：AppKit 的 `setTitle` 即使文本没有变
 ## 开发
 
 ```bash
-cargo test                     # 单元测试（54 个）
+cargo test                     # 单元测试（52 个）
 cargo run -- --dump            # 打印解析到的每日数据
 cargo run -- --serve-only      # 只起 HTTP 服务，便于调试前端
 cargo run                      # 完整模式（菜单栏 + 网页）

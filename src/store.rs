@@ -43,20 +43,6 @@ pub struct Store {
     dir: PathBuf,
 }
 
-/// 把旧版本的数据目录整体改名到新位置。
-///
-/// 只在「新目录不存在、旧目录存在」时动作，因此可重复调用。改名是原子的，
-/// 失败（例如跨设备）时返回错误且不删除任何数据，调用方决定是否继续。
-pub fn migrate_dir(legacy: &Path, current: &Path) -> std::io::Result<()> {
-    if current.exists() || !legacy.exists() {
-        return Ok(());
-    }
-    if let Some(parent) = current.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::rename(legacy, current)
-}
-
 impl Store {
     /// 打开（必要时创建）数据目录。
     pub fn open(dir: &Path) -> std::io::Result<Self> {
@@ -182,31 +168,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn migrates_legacy_dir_once() {
-        let root = temp_dir("migrate");
-        let legacy = root.join("rime-counter");
-        let current = root.join("rime-type-stats");
-        std::fs::create_dir_all(&legacy).unwrap();
-        std::fs::write(legacy.join(EVENTS_FILE), b"{\"day\":\"2026-01-01\"}\n").unwrap();
-
-        migrate_dir(&legacy, &current).unwrap();
-        assert!(!legacy.exists());
-        assert!(current.join(EVENTS_FILE).exists());
-
-        // 新目录已存在时不再动作，也不会覆盖
-        migrate_dir(&legacy, &current).unwrap();
-        assert!(current.join(EVENTS_FILE).exists());
-    }
-
-    #[test]
-    fn migrate_is_noop_without_legacy_dir() {
-        let root = temp_dir("migrate-none");
-        let current = root.join("rime-type-stats");
-        migrate_dir(&root.join("rime-counter"), &current).unwrap();
-        assert!(!current.exists());
     }
 
     #[test]
