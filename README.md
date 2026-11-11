@@ -122,7 +122,8 @@ systemctl --user enable --now rime-type-stats
 
 ## 发布
 
-推送 `v*` 标签即自动构建 DMG 并创建 GitHub Release：
+推送 `v*` 标签即自动构建 macOS DMG 与 Linux 安装包（`.deb` / `.rpm` / Arch `.pkg.tar.zst`），
+并创建 GitHub Release：
 
 ```bash
 git tag v0.1.0
